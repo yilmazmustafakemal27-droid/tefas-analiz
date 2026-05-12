@@ -10,7 +10,10 @@ warnings.filterwarnings("ignore")
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from scipy import stats
+try:
+    from scipy import stats
+except ImportError:
+    from numpy import random as stats
 from tefas import Crawler
 
 try:
