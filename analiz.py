@@ -462,7 +462,7 @@ def risk_metrikleri(df):
     fazla = df['getiri'].values - rf_gunluk.values
     fazla = fazla[~np.isnan(fazla)]
 
-   if len(fazla) > 0 and np.std(fazla) > 0:
+    if len(fazla) > 0 and np.std(fazla) > 0:
         sharpe = (np.mean(fazla) / np.std(fazla)) * np.sqrt(252)
         downside = np.sqrt(np.mean(np.minimum(0, fazla)**2))
         sortino = (np.mean(fazla) / downside) * np.sqrt(252) if downside > 0 else 0
