@@ -1,20 +1,14 @@
 """
-TEFAS Karar Destek - Sade Dil Açıklama Modülü
-==============================================
-Streamlit'te her teknik terim yanında (?) ikonu gösterir.
-Tıklanınca sıradan insan diliyle açıklama açılır.
-
-Kullanım örnekleri:
-    from aciklamalar import aciklamali_metrik, popover_aciklama, dinamik_aciklama
-
-    # Yöntem 1: st.metric + altında (?) popover
-    aciklamali_metrik("Sharpe Oranı", f"{deger:.2f}", "sharpe", deger)
-
-    # Yöntem 2: Sadece (?) ikonu (başka yerde göstermek için)
-    popover_aciklama("sharpe", deger)
-
-    # Yöntem 3: Sadece metni al
-    metin = dinamik_aciklama("sharpe", deger)
+TEFAS Karar Destek - Sade Dil Açıklama Modülü (v9)
+====================================================
+YENİ EKLENENLER:
+- _sma_sinyali: SMA-50/200 yorumu
+- _yillik_egim: 90 gün yıllık eğim
+- _trend_gucu_r2: trend gücü
+- _rolling_beta, _rolling_alpha, _rolling_ir, _rolling_sharpe: rolling grafik açıklamaları
+- _konum_yorum: Z-skor metinsel yorumu
+- _rejim_stat: rejim istatistikleri tablosu
+- _backtest_hata: backtest başarısız olunca açıklama
 """
 
 import streamlit as st
@@ -22,7 +16,6 @@ import streamlit as st
 
 # =============================================================
 # DİNAMİK AÇIKLAMA FONKSİYONLARI
-# Her biri hesaplanan değere göre farklı cümle üretir
 # =============================================================
 
 def _sharpe(deger):
@@ -251,6 +244,147 @@ def _trend_rejimi(rejim_str):
     return temel + yorum
 
 
+# ============ YENİ EKLENENLER ============
+
+def _sma_sinyali(sinyal_str):
+    """SMA-50/200 yorumu — fiyat ile 50-200 günlük ortalamaların ilişkisi."""
+    temel = ("**SMA Sinyali**, fonun fiyatının **50 günlük** ve **200 günlük** ortalamalarına göre konumunu gösterir. "
+             "Klasik bir teknik analiz göstergesidir:\n"
+             "- SMA 50 > SMA 200 → 'Altın Çapraz' (yükseliş kalıbı)\n"
+             "- SMA 50 < SMA 200 → 'Ölüm Çaprazı' (düşüş kalıbı)\n\n")
+    s = str(sinyal_str)
+    if "Yükseliş trendi" in s:
+        yorum = "✅ **Yükseliş trendi** — Hem SMA-50 SMA-200'ün üstünde, hem de fiyat SMA-50'nin üstünde. En sağlam yükseliş sinyali."
+    elif "geri çekilme" in s:
+        yorum = "🟡 **Yükselişte geri çekilme** — SMA-50 hâlâ SMA-200'ün üstünde ama fiyat SMA-50'nin altına düşmüş. Geçici düzeltme olabilir."
+    elif "Düşüş trendi" in s:
+        yorum = "🔴 **Düşüş trendi** — Hem SMA-50 SMA-200'ün altında, hem de fiyat SMA-50'nin altında. En sert düşüş sinyali."
+    elif "toparlanma" in s:
+        yorum = "🟠 **Düşüşte toparlanma** — SMA-50 SMA-200'ün altında ama fiyat SMA-50'nin üstüne çıkmış. Sahte yükseliş olabilir."
+    else:
+        yorum = "❔ **Veri yetersiz** — 200 günlük ortalama için yeterli geçmiş veri yok."
+    return temel + yorum + "\n\n💡 *Tek başına karar verme. Diğer sinyallerle birlikte yorumla.*"
+
+
+def _yillik_egim(deger):
+    """90 günlük log-eğimin yıllığa çevrilmiş halı."""
+    if deger is None:
+        return "Hesaplanamadı."
+    temel = ("**90g Yıllık Eğim**, son 3 ayın fiyat trendinin **yıllık bileşik büyüme hızına** çevrilmiş hali. "
+             "Logaritmik regresyonla hesaplanır.\n\n")
+    if deger > 100:
+        yorum = f"🚀 **%{deger:+.1f}/yıl** — Çok güçlü yukarı momentum. Bu hızla devam etmesi olası değil."
+    elif deger > 50:
+        yorum = f"📈 **%{deger:+.1f}/yıl** — Güçlü yükseliş ritmi."
+    elif deger > 20:
+        yorum = f"🟢 **%{deger:+.1f}/yıl** — Sağlıklı yükseliş ritmi."
+    elif deger > 0:
+        yorum = f"🟡 **%{deger:+.1f}/yıl** — Yavaş ama pozitif. Enflasyonun altında kalabilir."
+    elif deger > -20:
+        yorum = f"🟠 **%{deger:+.1f}/yıl** — Hafif düşüş trendi."
+    else:
+        yorum = f"🔴 **%{deger:+.1f}/yıl** — Sert düşüş trendi."
+    return temel + yorum + "\n\n💡 *Risksiz faizle kıyasla. Faizin altındaysa fon momentumu zayıf demektir.*"
+
+
+def _trend_gucu_r2(deger):
+    """Trend gücü (R²)."""
+    if deger is None:
+        return "Hesaplanamadı."
+    temel = ("**Trend Gücü (R²)**, son 90 günlük trendin **ne kadar 'düzgün' bir çizgi** olduğunu gösterir. "
+             "1'e yakın = fiyat trende sıkı sıkı yapışmış, 0'a yakın = trend zayıf, sallantılı.\n\n")
+    if deger > 0.7:
+        yorum = f"📐 **{deger:.2f}** — Çok güçlü, düzgün trend. Yön belirgin."
+    elif deger > 0.4:
+        yorum = f"📊 **{deger:.2f}** — Orta seviye trend gücü. Yön var ama sallantılı."
+    elif deger > 0.2:
+        yorum = f"🌀 **{deger:.2f}** — Zayıf trend. Fiyat dağınık hareket ediyor."
+    else:
+        yorum = f"🎲 **{deger:.2f}** — Trend yok denecek kadar zayıf. Fiyat rastgele görünüyor."
+    return temel + yorum
+
+
+def _konum_yorum(z_skor, yorum_str):
+    """Z-skor'un metinsel yorumu (Zirve/Pahalı/Adil/Ucuz/Dip) için ek bağlam."""
+    if z_skor is None:
+        return "Hesaplanamadı."
+    temel = ("**Konum Yorumu**, Z-skor değerinin **kategorik anlamı**. "
+             "Z-skor sürekli bir sayı; bu yorum onu 5 kovaya böler:\n"
+             "- **Zirve bölgesi** (z > 2): %2'lik en pahalı kuyruk\n"
+             "- **Pahalı** (1 < z < 2)\n"
+             "- **Adil değer** (-1 < z < 1): normal dağılımın orta %68'i\n"
+             "- **Ucuz** (-2 < z < -1)\n"
+             "- **Dip bölgesi** (z < -2): %2'lik en ucuz kuyruk\n\n")
+    yorum = f"📍 Şu anki konum: **{yorum_str}** (Z = **{z_skor:+.2f}**)"
+    return temel + yorum
+
+
+def _rejim_stat():
+    """Rejim istatistikleri tablosu için açıklama."""
+    return ("**Rejim İstatistikleri**, fonun **3 farklı piyasa rejiminde** geçmişte nasıl davrandığını gösterir:\n\n"
+            "- **YÜKSELİŞ** rejimi: 90g yıllık eğim, risksiz faiz + %15'ten büyük\n"
+            "- **YATAY** rejimi: 90g yıllık eğim, risksiz faizin ±%10-15 aralığında\n"
+            "- **DÜŞÜŞ** rejimi: 90g yıllık eğim, risksiz faiz - %10'dan küçük\n\n"
+            "Tabloda her rejimin **yıllık μ (ortalama getiri)** ve **yıllık σ (volatilite)** değerleri var. "
+            "Gözlem sayısı 0 ise o rejim hiç yaşanmamış demektir.\n\n"
+            "💡 *Monte Carlo simülasyonu güncel rejimin μ ve σ değerlerini ağırlıklı kullanır.*")
+
+
+def _rolling_beta():
+    """Rolling beta grafiği açıklaması."""
+    return ("**Rolling Beta (6 ay)**, fonun **endekse hassasiyetinin zaman içinde nasıl değiştiğini** gösterir.\n\n"
+            "Tek bir 'genel beta' yerine, **her 126 günlük (~6 ay) pencerede** yeniden hesaplanır. Böylece:\n"
+            "- Beta yükseliyorsa → fon zamanla daha agresifleşmiş\n"
+            "- Beta düşüyorsa → fon zamanla defansifleşmiş\n"
+            "- Çok dalgalanıyorsa → fon stratejisi değişken / tutarsız\n\n"
+            "**1.0 çizgisi (kesikli)**: tam endeks gibi davranma noktası.\n\n"
+            "💡 *Beta sürekli 1'in üstündeyse fon agresif. 1'in altındaysa defansif.*")
+
+
+def _rolling_alpha():
+    """Rolling alpha grafiği açıklaması."""
+    return ("**Rolling Alpha (6 ay, yıllık %)**, fon yöneticisinin **endekse göre yarattığı ekstra getirinin zaman içindeki seyri**.\n\n"
+            "Her 126 günlük pencerede alpha yeniden hesaplanır. Böylece:\n"
+            "- Alpha sürekli pozitifse → yönetici **istikrarlı şekilde başarılı**\n"
+            "- Alpha bazen pozitif bazen negatifse → yönetim **tutarsız**, şansa bağımlı\n"
+            "- Alpha sürekli negatifse → yönetim **endeksten kötü**, masraf veriyorsun\n\n"
+            "**0 çizgisi (kesikli)**: endeksle aynı performans noktası.\n\n"
+            "💡 *İdeal: çizginin çoğu zaman 0'ın üstünde olması.*")
+
+
+def _rolling_ir():
+    """Rolling Information Ratio açıklaması."""
+    return ("**Rolling Information Ratio (6 ay)**, yöneticinin **fazla getirisinin tutarlılığının** zaman içinde nasıl değiştiğini gösterir.\n\n"
+            "IR = (Fon getirisi − Endeks getirisi) / (Aktif riskin standart sapması)\n\n"
+            "- IR sürekli > 0.5 ise → **profesyonel kalite yönetim**\n"
+            "- IR 0 etrafında geziniyorsa → **şansa bağımlı performans**\n"
+            "- IR sürekli negatifse → **endeks fonu daha iyi olurdu**\n\n"
+            "💡 *Alpha 'ne kadar fazla' getiri verdiğini söyler, IR ise 'ne kadar tutarlı' verdiğini.*")
+
+
+def _rolling_sharpe():
+    """Rolling Sharpe açıklaması."""
+    return ("**Rolling Sharpe (6 ay)**, fonun **riske göre getiri kalitesinin zaman içinde nasıl değiştiğini** gösterir.\n\n"
+            "Her 126 günlük pencerede Sharpe yeniden hesaplanır. Tek bir 'genel Sharpe' yerine zaman serisi verir:\n"
+            "- Sharpe yükseliyorsa → fon **iyileşiyor** (daha az risk, daha çok getiri)\n"
+            "- Sharpe düşüyorsa → fon **bozuluyor**\n"
+            "- Çok dalgalanıyorsa → fon **piyasa rejimine çok bağımlı**\n\n"
+            "💡 *Sharpe'ın son 6 ayı önemli — şu anki performansı yansıtır.*")
+
+
+def _backtest_hata(hata_metni):
+    """Backtest başarısız olduğunda gösterilecek açıklama."""
+    return ("**Backtest neden çalışmadı?**\n\n"
+            f"`{hata_metni}`\n\n"
+            "**Olası çözümler:**\n"
+            "1. **Sidebar → 'Geçmiş veri (gün)'** ayarını **en az 750'ye** çıkar. Backtest için minimum ~250 işlem günü gerekli, "
+            "ama anlamlı sonuç için 500+ işlem günü ister (yaklaşık 750 takvim günü = 2 yıl).\n"
+            "2. **Fon çok yeni olabilir** — kuruluş tarihinden itibaren 250'den az işlem günü varsa backtest yapılamaz.\n"
+            "3. **Veri çekmede gecikme/hata** olduysa analizi tekrar başlat.\n\n"
+            "💡 *Backtest 'sistem ne kadar güvenilir tahmin yapıyor?' sorusuna cevap arar. Yeni fonlar için cevap üretilemez — yeterli geçmiş yok.*")
+
+
+# Mevcut açıklamalar devam ediyor...
 def _p50_reel(p50, baslangic):
     if p50 is None or baslangic is None or baslangic == 0:
         return "Hesaplanamadı."
@@ -419,17 +553,25 @@ TERIMLER = {
     "standart_skor":      ("Standart Skor",         _standart_skor),
     "yillik_getiri":      ("Yıllık Getiri",         _yillik_getiri),
     "rejim_uyarisi":      ("Rejim Uyarısı",         _rejim_uyarisi),
+    # YENİ EKLENENLER
+    "sma_sinyali":        ("SMA Sinyali",           _sma_sinyali),
+    "yillik_egim":        ("90g Yıllık Eğim",       _yillik_egim),
+    "trend_gucu":         ("Trend Gücü (R²)",       _trend_gucu_r2),
+    "konum_yorum":        ("Konum Yorumu",          _konum_yorum),
+    "rejim_stat":         ("Rejim İstatistikleri",  _rejim_stat),
+    "rolling_beta":       ("Rolling Beta",          _rolling_beta),
+    "rolling_alpha":      ("Rolling Alpha",         _rolling_alpha),
+    "rolling_ir":         ("Rolling IR",            _rolling_ir),
+    "rolling_sharpe":     ("Rolling Sharpe",        _rolling_sharpe),
+    "backtest_hata":      ("Backtest Hatası",       _backtest_hata),
 }
 
 
 # =============================================================
-# DIŞA AÇIK FONKSİYONLAR (Streamlit'te kullanacağın)
+# DIŞA AÇIK FONKSİYONLAR
 # =============================================================
 
 def dinamik_aciklama(terim_id, *args, **kwargs):
-    """
-    Bir terimin sade dil açıklamasını döndürür (metin).
-    """
     if terim_id not in TERIMLER:
         return "Bu terim için açıklama bulunamadı."
     _, fonksiyon = TERIMLER[terim_id]
@@ -437,10 +579,6 @@ def dinamik_aciklama(terim_id, *args, **kwargs):
 
 
 def popover_aciklama(terim_id, *args, label="❓", **kwargs):
-    """
-    Sadece (?) ikonu — tıklayınca popover açılır.
-    Mevcut bir st.metric veya başka widget'ın yanına eklemek için.
-    """
     if terim_id not in TERIMLER:
         return
     baslik, fonksiyon = TERIMLER[terim_id]
@@ -450,14 +588,6 @@ def popover_aciklama(terim_id, *args, label="❓", **kwargs):
 
 
 def aciklamali_metrik(etiket, deger_str, terim_id, *args, delta=None, **kwargs):
-    """
-    st.metric + altına (?) popover'lı tek bir bileşen.
-    En şık görünüm — uygulamanın her yerinde kullanmak için ideal.
-
-    Örnek:
-        aciklamali_metrik("Sharpe Oranı", f"{sharpe:.2f}", "sharpe", sharpe)
-        aciklamali_metrik("Alpha", f"{alpha:+.1f}%", "alpha", alpha, delta="vs endeks")
-    """
     if terim_id not in TERIMLER:
         st.metric(etiket, deger_str, delta=delta)
         return
@@ -477,9 +607,6 @@ def aciklamali_metrik(etiket, deger_str, terim_id, *args, delta=None, **kwargs):
 
 
 def aciklama_expander(terim_id, *args, baslik_ek="", **kwargs):
-    """
-    Expander içinde açıklama. Detay açıklama göstermek için.
-    """
     if terim_id not in TERIMLER:
         return
     baslik, fonksiyon = TERIMLER[terim_id]
@@ -488,9 +615,6 @@ def aciklama_expander(terim_id, *args, baslik_ek="", **kwargs):
 
 
 def aciklama_inline(terim_id, *args, **kwargs):
-    """
-    Bilgi kutusu (st.info) içinde açıklama. Önemli sonuçlar için.
-    """
     if terim_id not in TERIMLER:
         return
     _, fonksiyon = TERIMLER[terim_id]
