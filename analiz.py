@@ -433,8 +433,11 @@ def rejim_degisim_uyarisi(df, kisa=None, uzun=None):
 # ================= 8. RSI + RİSK =================
 def rsi_skoru(df):
     delta = df['price'].diff()
-    kazanc = delta.where(delta > 0, 0).rolling(C.RSI_PENCERE).mean()
-    kayip  = -delta.where(delta < 0, 0).rolling(C.RSI_PENCERE).mean()
+    
+    # --- DÜZELTİLEN RSI (ÜSTEL HAREKETLİ ORTALAMA) ---
+    kazanc = delta.where(delta > 0, 0).ewm(alpha=1/C.RSI_PENCERE, adjust=False).mean()
+    kayip  = -delta.where(delta < 0, 0).ewm(alpha=1/C.RSI_PENCERE, adjust=False).mean()
+    # -------------------------------------------------
     rs = kazanc / kayip
     rsi = (100 - 100 / (1 + rs)).iloc[-1]
     if pd.isna(rsi):
@@ -459,10 +462,9 @@ def risk_metrikleri(df):
     fazla = df['getiri'].values - rf_gunluk.values
     fazla = fazla[~np.isnan(fazla)]
 
-    if len(fazla) > 0 and np.std(fazla) > 0:
+   if len(fazla) > 0 and np.std(fazla) > 0:
         sharpe = (np.mean(fazla) / np.std(fazla)) * np.sqrt(252)
-        neg = fazla[fazla < 0]
-        downside = neg.std() if len(neg) > 0 else np.std(fazla)
+        downside = np.sqrt(np.mean(np.minimum(0, fazla)**2))
         sortino = (np.mean(fazla) / downside) * np.sqrt(252) if downside > 0 else 0
     else:
         sharpe, sortino = 0, 0
