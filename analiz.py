@@ -142,7 +142,10 @@ def makro_verileri_getir(baslangic_tarihi, bitis_tarihi):
                 continue
             d = data[['Close']].reset_index()
             d.columns = ['date', 'price']
-            d['date'] = pd.to_datetime(d['date']).dt.tz_localize(None)
+            
+            # GÜNCELLEME: tz_localize(None) sonrasına dt.normalize() eklendi
+            d['date'] = pd.to_datetime(d['date']).dt.tz_localize(None).dt.normalize()
+            
             d['getiri'] = d['price'].pct_change()
             sonuclar[isim] = d
         except Exception:
@@ -156,7 +159,6 @@ def makro_verileri_getir(baslangic_tarihi, bitis_tarihi):
         m['getiri'] = m['price'].pct_change()
         sonuclar['ALTIN_TRY'] = m[['date', 'price', 'getiri']]
     return sonuclar
-
 
 # ================= 5. ROLLING Z-SKOR =================
 def rolling_z_skor(df, pencere=252):
