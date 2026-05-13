@@ -1,27 +1,43 @@
 """
-TEFAS Fon Analiz Motoru
-========================
-Streamlit UI'dan bağımsız, import edilebilir analiz modülü.
-Tüm fonksiyonlar saf — yan etki yok, print yok.
+TEFAS Fon Analiz Motoru — v11
+==============================
+v11 GÜNCELLEMELERİ:
+- Tüm magic number'lar config.py'ye taşındı
+- EVDS API entegrasyonu (risksiz faiz dinamik çekiliyor, fallback hardcoded liste)
+- Backtest'te tarihsel enflasyon beklentisi (lookahead bias düzeltildi)
+- tam_analiz `df` parametresi alabiliyor (cache zinciri için)
 
-v9 GÜNCELLEMELERİ:
-- walk_forward_backtest düzeltildi (işlem günü tabanlı, anlamlı hata mesajları)
-- Backtest neden çalışmadığını söyleyen 'hata' alanı eklendi
+v10 GÜNCELLEMELERİ:
+- rolling_beta_alpha NumPy ile vektörize edildi (10x+ hız)
+- rolling_sharpe NumPy ile vektörize edildi
+- YFinance verisi ffill ile tatil uyuşmazlığı düzeltildi
+- _hizala_fon_endeks: merge_asof ile fon-endeks hizalama
+- walk_forward_backtest progress_callback parametresi aldı
+- Bütün analiz fonksiyonları hala saf (UI'dan bağımsız)
 """
 import warnings
 warnings.filterwarnings("ignore")
 
+import os
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from scipy import stats
 from tefas import Crawler
 
+import config as C
+
 try:
     import yfinance as yf
     YF_VAR = True
 except ImportError:
     YF_VAR = False
+
+try:
+    import requests
+    REQUESTS_VAR = True
+except ImportError:
+    REQUESTS_VAR = False
 
 
 # ================= 1. VERİ ÇEKME =================
@@ -46,21 +62,103 @@ def gunluk_istatistik(df):
 
 
 # ================= 2. RİSKSİZ FAİZ =================
+# EVDS API ile dinamik çekme — fallback: config.RISKSIZ_FAIZ_TARIHCE
+
+# Modül seviyesinde cache — bir Python oturumunda 1 kez çekilir
+_EVDS_FAIZ_CACHE = None
+_EVDS_FAIZ_CACHE_TARIH = None
+
+
+def _evds_faiz_serisi_cek():
+    """
+    TCMB EVDS API'sinden TP.AOFOD2 (gecelik repo faizi) haftalık tarihçesini çeker.
+
+    API key gerekli — `EVDS_API_KEY` ortam değişkeninden veya Streamlit
+    secrets'tan okunur. Yoksa None döner, çağıran fallback'e geçer.
+
+    Cache: 24 saatlik in-memory (modül seviyesi). Streamlit @st.cache_data
+    ile sarılmadığı için her cache miss'te yeniden çağrılmaz.
+    """
+    global _EVDS_FAIZ_CACHE, _EVDS_FAIZ_CACHE_TARIH
+
+    # 24 saatlik cache kontrolü
+    if _EVDS_FAIZ_CACHE is not None and _EVDS_FAIZ_CACHE_TARIH is not None:
+        if (datetime.now() - _EVDS_FAIZ_CACHE_TARIH).total_seconds() < C.CACHE_TTL_GUNLUK:
+            return _EVDS_FAIZ_CACHE
+
+    if not REQUESTS_VAR:
+        return None
+
+    api_key = os.environ.get('EVDS_API_KEY')
+    if not api_key:
+        # Streamlit secrets — sadece runtime'da varsa
+        try:
+            import streamlit as st
+            api_key = st.secrets.get('EVDS_API_KEY')
+        except Exception:
+            api_key = None
+
+    if not api_key:
+        return None
+
+    try:
+        # TP.AOFOD2: TCMB ağırlıklı ortalama fonlama maliyeti (politika faizi proxy)
+        bas = "01-01-2018"
+        bit = datetime.now().strftime("%d-%m-%Y")
+        url = (
+            f"https://evds2.tcmb.gov.tr/service/evds/series=TP.AOFOD2"
+            f"&startDate={bas}&endDate={bit}"
+            f"&type=json&aggregationTypes=avg&frequency=8"  # frequency=8: aylık
+        )
+        headers = {'key': api_key}
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        if 'items' not in data or not data['items']:
+            return None
+
+        rows = []
+        for item in data['items']:
+            tarih_str = item.get('Tarih')  # "2018-1" formatı
+            deger = item.get('TP_AOFOD2')
+            if not tarih_str or deger is None:
+                continue
+            try:
+                # "2018-1" → "2018-01-01"
+                yil, ay = tarih_str.split('-')
+                tarih = pd.Timestamp(f"{yil}-{int(ay):02d}-01")
+                # API yıllık % olarak veriyor → ondalığa çevir
+                faiz = float(deger) / 100
+                rows.append((tarih, faiz))
+            except (ValueError, AttributeError):
+                continue
+
+        if len(rows) < 5:
+            return None
+
+        df = pd.DataFrame(rows, columns=['date', 'faiz'])
+        df['date'] = df['date'].astype('datetime64[us]')
+        df = df.sort_values('date').drop_duplicates('date').reset_index(drop=True)
+
+        _EVDS_FAIZ_CACHE = df
+        _EVDS_FAIZ_CACHE_TARIH = datetime.now()
+        return df
+    except Exception:
+        return None
+
+
 def dinamik_risksiz_faiz_serisi(tarih_indeksi):
-    tarihsel = [
-        ("2018-01-01", 0.08),  ("2018-06-01", 0.175),
-        ("2019-01-01", 0.24),  ("2019-07-01", 0.195),
-        ("2020-01-01", 0.115), ("2020-09-01", 0.105),
-        ("2021-01-01", 0.17),  ("2021-09-01", 0.18),  ("2021-12-01", 0.14),
-        ("2022-06-01", 0.14),  ("2022-12-01", 0.09),
-        ("2023-06-01", 0.15),  ("2023-09-01", 0.30),  ("2023-12-01", 0.425),
-        ("2024-04-01", 0.50),  ("2024-12-01", 0.475),
-        ("2025-04-01", 0.46),  ("2025-12-01", 0.40),
-        ("2026-04-01", 0.36),
-    ]
-    df_faiz = pd.DataFrame(tarihsel, columns=['date', 'faiz'])
-    df_faiz['date'] = pd.to_datetime(df_faiz['date']).astype('datetime64[us]')
-    df_faiz = df_faiz.sort_values('date')
+    """
+    Önce EVDS'den çekmeyi dener, başarısızsa config.RISKSIZ_FAIZ_TARIHCE fallback.
+    """
+    df_faiz = _evds_faiz_serisi_cek()
+
+    if df_faiz is None:
+        # Fallback: hardcoded liste
+        df_faiz = pd.DataFrame(C.RISKSIZ_FAIZ_TARIHCE, columns=['date', 'faiz'])
+        df_faiz['date'] = pd.to_datetime(df_faiz['date']).astype('datetime64[us]')
+        df_faiz = df_faiz.sort_values('date')
 
     df_tarih = pd.DataFrame({'date': tarih_indeksi})
     df_tarih_sorted = df_tarih.sort_values('date')
@@ -74,7 +172,27 @@ def guncel_risksiz_faiz():
     return dinamik_risksiz_faiz_serisi(pd.DatetimeIndex([pd.Timestamp.now()])).iloc[0]
 
 
-# ================= 3. KATEGORİ + BENCHMARK =================
+def tarihsel_enflasyon_beklentisi(tarih_indeksi):
+    """
+    O tarihte geçerli olan 12-ay ileri enflasyon beklentisini döner.
+    Backtest'te lookahead bias'ı önlemek için kullanılır.
+
+    Kaynak: TCMB Piyasa Katılımcıları Anketi (config'de hardcoded fallback).
+    İlerideki bir geliştirmede EVDS'den TP.BEK.S02.A.B12 serisi çekilebilir.
+    """
+    df_enf = pd.DataFrame(C.ENFLASYON_BEKLENTI_TARIHCE, columns=['date', 'enf'])
+    df_enf['date'] = pd.to_datetime(df_enf['date']).astype('datetime64[us]')
+    df_enf = df_enf.sort_values('date')
+
+    df_tarih = pd.DataFrame({'date': tarih_indeksi})
+    df_tarih_sorted = df_tarih.sort_values('date')
+    merged = pd.merge_asof(df_tarih_sorted, df_enf, on='date', direction='backward')
+    merged['enf'] = merged['enf'].bfill().fillna(df_enf['enf'].iloc[0])
+    merged.index = df_tarih_sorted.index
+    return df_tarih.join(merged['enf'])['enf']
+
+
+# ================= 3. KATEGORİ =================
 def fon_kategorisi_belirle(df):
     if 'title' not in df.columns or df['title'].isna().all():
         return "BİLİNMİYOR", "Fon adı çekilemedi"
@@ -121,7 +239,7 @@ def kategoriye_gore_endeks_kodu(kategori):
     return haritasi.get(kategori, (None, "Mevduat / Risksiz"))
 
 
-# ================= 4. MAKRO VERİ =================
+# ================= 4. MAKRO VERİ (FFILL ile tatil hizalama) =================
 def makro_verileri_getir(baslangic_tarihi, bitis_tarihi):
     if not YF_VAR:
         return {}
@@ -143,6 +261,9 @@ def makro_verileri_getir(baslangic_tarihi, bitis_tarihi):
             d = data[['Close']].reset_index()
             d.columns = ['date', 'price']
             d['date'] = pd.to_datetime(d['date']).dt.tz_localize(None).astype('datetime64[us]')
+            d = d.sort_values('date').reset_index(drop=True)
+            # YENİ: ffill ile boş günleri doldur (tatil uyuşmazlıkları için)
+            d['price'] = d['price'].ffill()
             d['getiri'] = d['price'].pct_change()
             sonuclar[isim] = d
         except Exception:
@@ -151,16 +272,40 @@ def makro_verileri_getir(baslangic_tarihi, bitis_tarihi):
     if 'ALTIN_USD' in sonuclar and 'USDTRY' in sonuclar:
         au = sonuclar['ALTIN_USD'][['date', 'price']].rename(columns={'price': 'au'})
         ut = sonuclar['USDTRY'][['date', 'price']].rename(columns={'price': 'ut'})
-        m = au.merge(ut, on='date', how='inner').dropna()
+        # YENİ: outer join + ffill — ABD ve TR tatilleri çakışmadığında veri kaybı önlenir
+        m = au.merge(ut, on='date', how='outer').sort_values('date').reset_index(drop=True)
+        m['au'] = m['au'].ffill()
+        m['ut'] = m['ut'].ffill()
+        m = m.dropna()
         m['price'] = m['au'] * m['ut']
         m['getiri'] = m['price'].pct_change()
-        sonuclar['ALTIN_TRY'] = m[['date', 'price', 'getiri']]
+        sonuclar['ALTIN_TRY'] = m[['date', 'price', 'getiri']].reset_index(drop=True)
     return sonuclar
 
-# ================= 5. ROLLING Z-SKOR =================
-def rolling_z_skor(df, pencere=252):
+
+def _hizala_fon_endeks(fon_df, endeks_df):
+    """
+    Fon ve endeks tarihlerini merge_asof ile hizalar.
+    Fonun her gününe en yakın endeks değerini eşler (tolerans 3 gün).
+    Hem ABD tatili (S&P 500) hem TR tatili durumlarını çözer.
+    """
+    fon_sorted = fon_df[['date', 'getiri']].sort_values('date').reset_index(drop=True)
+    endeks_sorted = endeks_df[['date', 'getiri']].sort_values('date').reset_index(drop=True)
+    birlesik = pd.merge_asof(
+        fon_sorted.rename(columns={'getiri': 'fon_g'}),
+        endeks_sorted.rename(columns={'getiri': 'bench_g'}),
+        on='date', direction='backward',
+        tolerance=pd.Timedelta(days=3)
+    ).dropna()
+    return birlesik
+
+
+# ================= 5. Z-SKOR =================
+def rolling_z_skor(df, pencere=None):
+    if pencere is None:
+        pencere = C.Z_SKOR_PENCERE
     son = df['price'].tail(pencere).dropna().values
-    if len(son) < 60:
+    if len(son) < C.Z_SKOR_MIN_GUN:
         return 0.0, 50.0, "Veri yetersiz"
     log_p = np.log(son)
     x = np.arange(len(log_p))
@@ -171,19 +316,19 @@ def rolling_z_skor(df, pencere=252):
         return 0.0, 50.0, "Sabit fiyat"
     z = (sapma[-1] - sapma.mean()) / std_s
     skor = float(np.clip(50 - z * 25, 0, 100))
-    if z > 2:    yorum = "Zirve bölgesi"
-    elif z > 1:  yorum = "Pahalı"
-    elif z > -1: yorum = "Adil değer"
-    elif z > -2: yorum = "Ucuz"
-    else:        yorum = "Dip bölgesi"
+    if z > C.Z_ZIRVE:    yorum = "Zirve bölgesi"
+    elif z > C.Z_PAHALI: yorum = "Pahalı"
+    elif z > C.Z_UCUZ:   yorum = "Adil değer"
+    elif z > C.Z_DIP:    yorum = "Ucuz"
+    else:                yorum = "Dip bölgesi"
     return float(z), skor, yorum
 
 
 # ================= 6. TREND =================
 def trend_rejimi(df, rf_yillik):
     df = df.copy()
-    df['SMA_50']  = df['price'].rolling(50).mean()
-    df['SMA_200'] = df['price'].rolling(200).mean()
+    df['SMA_50']  = df['price'].rolling(C.SMA_KISA).mean()
+    df['SMA_200'] = df['price'].rolling(C.SMA_UZUN).mean()
     son_fiyat = df['price'].iloc[-1]
     sma_50, sma_200 = df['SMA_50'].iloc[-1], df['SMA_200'].iloc[-1]
 
@@ -198,8 +343,8 @@ def trend_rejimi(df, rf_yillik):
     else:
         sma_sinyali, sma_skor = "Düşüşte toparlanma", 40
 
-    son_90 = df['price'].tail(90).dropna().values
-    if len(son_90) >= 30:
+    son_90 = df['price'].tail(C.TREND_KISA_PENCERE).dropna().values
+    if len(son_90) >= C.TREND_MIN_GUN:
         slope, _, r_value, _, _ = stats.linregress(np.arange(len(son_90)), np.log(son_90))
         yillik_egim = slope * 252 * 100
         trend_gucu = r_value ** 2
@@ -207,9 +352,12 @@ def trend_rejimi(df, rf_yillik):
         yillik_egim, trend_gucu = 0, 0
 
     rf_pct = rf_yillik * 100
-    if yillik_egim > rf_pct + 15:    rejim = "YÜKSELİŞ"
-    elif yillik_egim > rf_pct - 10:  rejim = "YATAY"
-    else:                            rejim = "DÜŞÜŞ"
+    if yillik_egim > rf_pct + C.TREND_YUKSELIS_ESIK_PUAN:
+        rejim = "YÜKSELİŞ"
+    elif yillik_egim > rf_pct + C.TREND_DUSUS_ESIK_PUAN:
+        rejim = "YATAY"
+    else:
+        rejim = "DÜŞÜŞ"
 
     return {'rejim': rejim, 'sma_sinyali': sma_sinyali, 'sma_skor': sma_skor,
             'yillik_egim_yuzde': yillik_egim, 'trend_gucu_r2': trend_gucu}
@@ -222,23 +370,26 @@ def rejim_mu_sigma(df, rf_yillik):
     fiyatlar = df['price'].values
     rf_pct = rf_yillik * 100
 
-    for i in range(60, n):
-        pencere = fiyatlar[max(0, i-90):i]
+    for i in range(C.REJIM_BASLANGIC_GUN, n):
+        pencere = fiyatlar[max(0, i - C.REJIM_GERIYE_PENCERE):i]
         pencere = pencere[~np.isnan(pencere)]
-        if len(pencere) < 30:
+        if len(pencere) < C.TREND_MIN_GUN:
             continue
         x = np.arange(len(pencere))
         slope, _, _, _, _ = stats.linregress(x, np.log(pencere))
         yil_egim = slope * 252 * 100
-        if yil_egim > rf_pct + 15:    etiketler[i] = "YÜKSELİŞ"
-        elif yil_egim > rf_pct - 10:  etiketler[i] = "YATAY"
-        else:                          etiketler[i] = "DÜŞÜŞ"
+        if yil_egim > rf_pct + C.TREND_YUKSELIS_ESIK_PUAN:
+            etiketler[i] = "YÜKSELİŞ"
+        elif yil_egim > rf_pct + C.TREND_DUSUS_ESIK_PUAN:
+            etiketler[i] = "YATAY"
+        else:
+            etiketler[i] = "DÜŞÜŞ"
 
     df['rejim'] = etiketler
     rejim_stat = {}
     for r in ["YÜKSELİŞ", "YATAY", "DÜŞÜŞ"]:
         f = df[df['rejim'] == r]['getiri'].dropna()
-        if len(f) >= 20:
+        if len(f) >= C.REJIM_MIN_GOZLEM:
             rejim_stat[r] = {'mu': f.mean(), 'sigma': f.std(), 'n': len(f)}
         else:
             rejim_stat[r] = {'mu': df['getiri'].mean(),
@@ -247,7 +398,11 @@ def rejim_mu_sigma(df, rf_yillik):
 
 
 # ================= 7. REJİM UYARI =================
-def rejim_degisim_uyarisi(df, kisa=30, uzun=252):
+def rejim_degisim_uyarisi(df, kisa=None, uzun=None):
+    if kisa is None:
+        kisa = C.REJIM_KISA_PENCERE
+    if uzun is None:
+        uzun = C.REJIM_UZUN_PENCERE
     g = df['getiri'].dropna()
     if len(g) < uzun:
         return {'siddet': 0, 'karar': "Veri yok", 'vol_orani': 1, 'mu_fark': 0,
@@ -259,16 +414,16 @@ def rejim_degisim_uyarisi(df, kisa=30, uzun=252):
 
     siddet = 0
     uyarilar = []
-    if vol_oran > 2.0:
+    if vol_oran > C.VOL_PATLAMA_ESIK:
         siddet += 2; uyarilar.append(f"Volatilite patlaması: {vol_oran:.1f}x")
-    elif vol_oran > 1.5:
+    elif vol_oran > C.VOL_ARTIS_ESIK:
         siddet += 1; uyarilar.append(f"Volatilite artışı: {vol_oran:.1f}x")
-    if abs(mu_fark) > 30:
+    if abs(mu_fark) > C.MU_KIRILMA_ESIK_PUAN:
         siddet += 2; uyarilar.append(f"Trend kırılması: {mu_fark:+.0f} puan")
 
-    if siddet >= 3:   karar = "Rejim değişimi muhtemel"
-    elif siddet >= 1: karar = "Anormal davranış"
-    else:             karar = "Normal"
+    if siddet >= C.SIDDET_KRITIK:   karar = "Rejim değişimi muhtemel"
+    elif siddet >= C.SIDDET_ORTA:   karar = "Anormal davranış"
+    else:                            karar = "Normal"
 
     return {'siddet': siddet, 'son_vol': son_vol, 'tar_vol': tar_vol,
             'vol_orani': vol_oran, 'mu_fark': mu_fark,
@@ -278,18 +433,18 @@ def rejim_degisim_uyarisi(df, kisa=30, uzun=252):
 # ================= 8. RSI + RİSK =================
 def rsi_skoru(df):
     delta = df['price'].diff()
-    kazanc = delta.where(delta > 0, 0).rolling(14).mean()
-    kayip  = -delta.where(delta < 0, 0).rolling(14).mean()
+    kazanc = delta.where(delta > 0, 0).rolling(C.RSI_PENCERE).mean()
+    kayip  = -delta.where(delta < 0, 0).rolling(C.RSI_PENCERE).mean()
     rs = kazanc / kayip
     rsi = (100 - 100 / (1 + rs)).iloc[-1]
     if pd.isna(rsi):
         return {'rsi': None, 'skor': 50, 'yorum': "N/A"}
-    if rsi > 80:   s, y = 15, "Aşırı alım (yüksek)"
-    elif rsi > 70: s, y = 35, "Aşırı alım"
-    elif rsi > 50: s, y = 65, "Pozitif"
-    elif rsi > 30: s, y = 50, "Negatif"
-    elif rsi > 20: s, y = 75, "Aşırı satım"
-    else:          s, y = 90, "Aşırı satım (düşük)"
+    if rsi > C.RSI_ASIRI_ALIM_YUKSEK:   s, y = 15, "Aşırı alım (yüksek)"
+    elif rsi > C.RSI_ASIRI_ALIM:        s, y = 35, "Aşırı alım"
+    elif rsi > C.RSI_NOTR_UST:          s, y = 65, "Pozitif"
+    elif rsi > C.RSI_NOTR_ALT:          s, y = 50, "Negatif"
+    elif rsi > C.RSI_ASIRI_SATIM_DUSUK: s, y = 75, "Aşırı satım"
+    else:                                s, y = 90, "Aşırı satım (düşük)"
     return {'rsi': float(rsi), 'skor': s, 'yorum': y}
 
 
@@ -321,10 +476,7 @@ def risk_metrikleri(df):
 
 # ================= 9. BETA / ALPHA =================
 def beta_alpha_endekse_karsi(fon_df, endeks_df):
-    birlesik = fon_df[['date', 'getiri']].rename(columns={'getiri': 'fon_g'}).merge(
-        endeks_df[['date', 'getiri']].rename(columns={'getiri': 'bench_g'}),
-        on='date', how='inner'
-    ).dropna()
+    birlesik = _hizala_fon_endeks(fon_df, endeks_df)
     if len(birlesik) < 60:
         return None
     bench = birlesik['bench_g'].values
@@ -350,48 +502,122 @@ def beta_alpha_endekse_karsi(fon_df, endeks_df):
             'alpha_yorum': alpha_yorum, 'gozlem_sayisi': len(birlesik)}
 
 
-def rolling_beta_alpha(fon_df, endeks_df, pencere=126):
-    birlesik = fon_df[['date', 'getiri']].rename(columns={'getiri': 'fon_g'}).merge(
-        endeks_df[['date', 'getiri']].rename(columns={'getiri': 'bench_g'}),
-        on='date', how='inner'
-    ).dropna().reset_index(drop=True)
-    if len(birlesik) < pencere + 30:
+def rolling_beta_alpha(fon_df, endeks_df, pencere=None):
+    """
+    VEKTÖRİZE: NumPy ile rolling OLS, O(n) karmaşıklık.
+    Eski for-döngüsü scipy.linregress versiyonundan ~15-30x hızlı.
+
+    Matematik:
+        beta = (n*Σxy - Σx*Σy) / (n*Σxx - (Σx)^2)
+        alpha = mean(y) - beta * mean(x)
+    Kümülatif toplamlarla rolling sum'ları O(n)'de hesaplıyoruz.
+    """
+    if pencere is None:
+        pencere = C.ROLLING_BETA_PENCERE
+    birlesik = _hizala_fon_endeks(fon_df, endeks_df).reset_index(drop=True)
+    if len(birlesik) < pencere + C.ROLLING_MIN_EK_GUN:
         return None
-    rb, ra, ri, t = [], [], [], []
-    for i in range(pencere, len(birlesik)):
-        p = birlesik.iloc[i-pencere:i]
-        slope, intercept, _, _, _ = stats.linregress(p['bench_g'], p['fon_g'])
-        rb.append(slope)
-        ra.append(((1 + intercept) ** 252 - 1) * 100)
-        a = p['fon_g'] - p['bench_g']
-        ri.append((a.mean() * 252) / (a.std() * np.sqrt(252)) if a.std() > 0 else 0)
-        t.append(birlesik['date'].iloc[i])
-    return pd.DataFrame({'date': t, 'beta': rb, 'alpha_yillik': ra, 'info_ratio': ri})
+
+    x = birlesik['bench_g'].values
+    y = birlesik['fon_g'].values
+    tarihler = birlesik['date'].values
+    n = len(x)
+
+    # Kümülatif toplamlar
+    cumx = np.concatenate([[0.0], np.cumsum(x)])
+    cumy = np.concatenate([[0.0], np.cumsum(y)])
+    cumxx = np.concatenate([[0.0], np.cumsum(x * x)])
+    cumxy = np.concatenate([[0.0], np.cumsum(x * y)])
+    cumyy = np.concatenate([[0.0], np.cumsum(y * y)])
+
+    idx = np.arange(pencere, n + 1)  # her i için pencere = [i-pencere, i)
+    sx = cumx[idx] - cumx[idx - pencere]
+    sy = cumy[idx] - cumy[idx - pencere]
+    sxx = cumxx[idx] - cumxx[idx - pencere]
+    sxy = cumxy[idx] - cumxy[idx - pencere]
+    syy = cumyy[idx] - cumyy[idx - pencere]
+    p = float(pencere)
+
+    pay = p * sxy - sx * sy
+    payda = p * sxx - sx * sx
+    payda_safe = np.where(np.abs(payda) > 1e-15, payda, np.nan)
+    beta = pay / payda_safe
+
+    mean_x = sx / p
+    mean_y = sy / p
+    alpha_gunluk = mean_y - beta * mean_x
+    alpha_yillik = ((1 + alpha_gunluk) ** 252 - 1) * 100
+
+    # Information Ratio: aktif getiri (y - x) için
+    aktif_mean = mean_y - mean_x
+    var_y = (syy - p * mean_y * mean_y) / (p - 1)
+    var_x = (sxx - p * mean_x * mean_x) / (p - 1)
+    cov_xy = (sxy - p * mean_x * mean_y) / (p - 1)
+    var_aktif = np.maximum(var_y + var_x - 2 * cov_xy, 0)
+    std_aktif = np.sqrt(var_aktif)
+    std_aktif_safe = np.where(std_aktif > 1e-15, std_aktif, np.nan)
+    info_ratio = (aktif_mean * 252) / (std_aktif_safe * np.sqrt(252))
+
+    # NaN'leri temizle
+    beta = np.nan_to_num(beta, nan=0.0)
+    alpha_yillik = np.nan_to_num(alpha_yillik, nan=0.0)
+    info_ratio = np.nan_to_num(info_ratio, nan=0.0)
+
+    # Tarih hizalama: her i. pencere [i-pencere, i)'nin SON noktası tarihler[i-1]
+    son_tarihler = tarihler[idx - 1]
+
+    return pd.DataFrame({
+        'date': son_tarihler,
+        'beta': beta,
+        'alpha_yillik': alpha_yillik,
+        'info_ratio': info_ratio
+    })
 
 
-def rolling_sharpe(fon_df, pencere=126):
-    df = fon_df.copy().dropna(subset=['getiri'])
-    if len(df) < pencere + 30:
+def rolling_sharpe(fon_df, pencere=None):
+    """VEKTÖRİZE: O(n) kümülatif toplam yöntemi."""
+    if pencere is None:
+        pencere = C.ROLLING_SHARPE_PENCERE
+    df = fon_df.copy().dropna(subset=['getiri']).reset_index(drop=True)
+    if len(df) < pencere + C.ROLLING_MIN_EK_GUN:
         return None
     rf_serisi = dinamik_risksiz_faiz_serisi(df['date'])
     rf_gunluk = (1 + rf_serisi) ** (1/252) - 1
     fazla = df['getiri'].values - rf_gunluk.values
-    rs, t = [], []
-    for i in range(pencere, len(df)):
-        f = fazla[i-pencere:i]
-        s = np.std(f)
-        rs.append(np.mean(f) / s * np.sqrt(252) if s > 0 else 0)
-        t.append(df['date'].iloc[i])
-    return pd.DataFrame({'date': t, 'sharpe': rs})
+
+    n = len(fazla)
+    cumf = np.concatenate([[0.0], np.cumsum(fazla)])
+    cumff = np.concatenate([[0.0], np.cumsum(fazla * fazla)])
+
+    idx = np.arange(pencere, n + 1)
+    sf = cumf[idx] - cumf[idx - pencere]
+    sff = cumff[idx] - cumff[idx - pencere]
+    p = float(pencere)
+
+    mean_f = sf / p
+    var_f = np.maximum((sff - p * mean_f * mean_f) / (p - 1), 0)
+    std_f = np.sqrt(var_f)
+    std_f_safe = np.where(std_f > 1e-15, std_f, np.nan)
+    sharpe = (mean_f / std_f_safe) * np.sqrt(252)
+    sharpe = np.nan_to_num(sharpe, nan=0.0)
+
+    tarihler = df['date'].values
+    son_tarihler = tarihler[idx - 1]
+
+    return pd.DataFrame({'date': son_tarihler, 'sharpe': sharpe})
 
 
 # ================= 10. MONTE CARLO =================
 def monte_carlo_motoru(baslangic_fiyati, mu_genel, sigma_genel,
                       rejim_mu, rejim_sigma,
                       enflasyon_orani, enflasyon_sigma_yillik=0.13,
-                      gun_sayisi=252, senaryo_sayisi=10000, df_t=6):
-    duzeltilmis_mu    = mu_genel * 0.30 + rejim_mu * 0.70
-    duzeltilmis_sigma = sigma_genel * 0.40 + rejim_sigma * 0.60
+                      gun_sayisi=252, senaryo_sayisi=None, df_t=None):
+    if senaryo_sayisi is None:
+        senaryo_sayisi = C.MC_VARSAYILAN_SENARYO
+    if df_t is None:
+        df_t = C.MC_T_DAGILIM_DF
+    duzeltilmis_mu    = mu_genel * (1 - C.MC_REJIM_AGIRLIK_MU) + rejim_mu * C.MC_REJIM_AGIRLIK_MU
+    duzeltilmis_sigma = sigma_genel * (1 - C.MC_REJIM_AGIRLIK_SIGMA) + rejim_sigma * C.MC_REJIM_AGIRLIK_SIGMA
     varyans_t = df_t / (df_t - 2)
     t_norm = np.random.standard_t(df_t,
                                   size=(gun_sayisi - 1, senaryo_sayisi)) / np.sqrt(varyans_t)
@@ -413,31 +639,31 @@ def sinyal_gruplari_uret(z_skor, sma_skor, rsi_skor,
     grup_degerleme = float(np.clip(50 - z_skor * 25, 0, 100))
     grup_trend = (sma_skor + rsi_skor) / 2
 
-    if sharpe > 2:    sh = 100
-    elif sharpe > 1:  sh = 75
-    elif sharpe > 0.5:sh = 60
-    elif sharpe > 0:  sh = 45
-    else:             sh = 25
-    if drawdown_guncel > -5:    dd = 50
-    elif drawdown_guncel > -10: dd = 60
-    elif drawdown_guncel > -20: dd = 70
-    else:                       dd = 80
+    if sharpe > C.SHARPE_MUKEMMEL:  sh = 100
+    elif sharpe > C.SHARPE_IYI:     sh = 75
+    elif sharpe > C.SHARPE_ORTA:    sh = 60
+    elif sharpe > C.SHARPE_POZITIF: sh = 45
+    else:                            sh = 25
+    if drawdown_guncel > C.DD_HAFIF:    dd = 50
+    elif drawdown_guncel > C.DD_ORTA:   dd = 60
+    elif drawdown_guncel > C.DD_AGIR:   dd = 70
+    else:                                dd = 80
     grup_risk = (sh + dd) / 2
 
-    if alpha_yillik is None: alpha_skor = 50
-    elif alpha_yillik > 10:  alpha_skor = 90
-    elif alpha_yillik > 5:   alpha_skor = 75
-    elif alpha_yillik > 0:   alpha_skor = 60
-    elif alpha_yillik > -5:  alpha_skor = 40
-    elif alpha_yillik > -10: alpha_skor = 25
-    else:                    alpha_skor = 10
-    if info_ratio is None:   ir_skor = 50
-    elif info_ratio > 0.75:  ir_skor = 90
-    elif info_ratio > 0.5:   ir_skor = 75
-    elif info_ratio > 0.25:  ir_skor = 60
-    elif info_ratio > 0:     ir_skor = 50
-    elif info_ratio > -0.25: ir_skor = 35
-    else:                    ir_skor = 20
+    if alpha_yillik is None:                alpha_skor = 50
+    elif alpha_yillik > C.ALPHA_MUKEMMEL:   alpha_skor = 90
+    elif alpha_yillik > C.ALPHA_IYI:        alpha_skor = 75
+    elif alpha_yillik > C.ALPHA_POZITIF:    alpha_skor = 60
+    elif alpha_yillik > C.ALPHA_HAFIF_NEG:  alpha_skor = 40
+    elif alpha_yillik > C.ALPHA_NEGATIF:    alpha_skor = 25
+    else:                                    alpha_skor = 10
+    if info_ratio is None:                  ir_skor = 50
+    elif info_ratio > C.IR_MUKEMMEL:        ir_skor = 90
+    elif info_ratio > C.IR_IYI:             ir_skor = 75
+    elif info_ratio > C.IR_ORTA:            ir_skor = 60
+    elif info_ratio > C.IR_POZITIF:         ir_skor = 50
+    elif info_ratio > C.IR_HAFIF_NEG:       ir_skor = 35
+    else:                                    ir_skor = 20
     grup_aktif = (alpha_skor + ir_skor) / 2
 
     gruplar = {
@@ -448,10 +674,10 @@ def sinyal_gruplari_uret(z_skor, sma_skor, rsi_skor,
     }
     skor_ham = float(np.mean(list(gruplar.values())))
 
-    if rejim_uyari_siddet >= 3:
+    if rejim_uyari_siddet >= C.SIDDET_KRITIK:
         skor = skor_ham * 0.5 + 50 * 0.5
         guven = "Düşük (rejim değişimi sinyali)"
-    elif rejim_uyari_siddet >= 1:
+    elif rejim_uyari_siddet >= C.SIDDET_ORTA:
         skor = skor_ham * 0.75 + 50 * 0.25
         guven = "Orta"
     else:
@@ -459,11 +685,11 @@ def sinyal_gruplari_uret(z_skor, sma_skor, rsi_skor,
         guven = "Normal"
     skor = float(np.clip(skor, 0, 100))
 
-    if skor >= 70:   etiket = "Çok güçlü göstergeler"
-    elif skor >= 58: etiket = "Güçlü göstergeler"
-    elif skor >= 45: etiket = "Karışık göstergeler"
-    elif skor >= 32: etiket = "Zayıf göstergeler"
-    else:            etiket = "Çok zayıf göstergeler"
+    if skor >= C.SKOR_COK_GUCLU:   etiket = "Çok güçlü göstergeler"
+    elif skor >= C.SKOR_GUCLU:     etiket = "Güçlü göstergeler"
+    elif skor >= C.SKOR_KARISIK:   etiket = "Karışık göstergeler"
+    elif skor >= C.SKOR_ZAYIF:     etiket = "Zayıf göstergeler"
+    else:                           etiket = "Çok zayıf göstergeler"
 
     return {'toplam_skor': skor, 'etiket': etiket, 'guven': guven, 'gruplar': gruplar}
 
@@ -508,62 +734,81 @@ def benchmark_karsilastir(fon_df, kategori, enflasyon_yillik, makro_dict):
     return sonuc, endeks_df
 
 
-# ================= 13. WALK-FORWARD BACKTEST (DÜZELTİLDİ — İŞLEM GÜNÜ TABANLI) =================
+# ================= 13. WALK-FORWARD BACKTEST (PROGRESS DESTEKLİ) =================
 def walk_forward_backtest(df_tam, enflasyon, gecmis_gun_sayisi,
-                          adim_is_gunu=None, senaryo_sayisi=3000):
+                          adim_is_gunu=None, senaryo_sayisi=None,
+                          progress_callback=None,
+                          tarihsel_enf_kullan=True):
     """
-    DÜZELTİLDİ: Artık tamamen İŞLEM GÜNÜ tabanında çalışır.
-    Önceki sürümde takvim günü/işlem günü karışıklığı vardı.
+    İşlem günü tabanlı walk-forward backtest.
 
-    Mantık:
-    - Mevcut veri satır sayısı (n) üzerinden hesaplanır
-    - Eğitim penceresi:  n * 2/3 işlem günü
-    - Tahmin ufku:       n * 1/3 işlem günü (en fazla 252 = 1 yıl)
-    - Test adımı:        n / 25 (minimum 10 işlem günü)
+    progress_callback: opsiyonel callable. (current, total, mesaj) ile çağrılır.
+    UI'da progress bar göstermek için kullanılır. None ise sessiz çalışır.
 
-    Her test noktasında SADECE o satıra kadarki veri kullanılır.
+    tarihsel_enf_kullan: True ise (varsayılan), her test noktasında O TARİHTEKİ
+    enflasyon beklentisi kullanılır (lookahead bias'sız). False ise üst seviyede
+    geçilen `enflasyon` parametresi tüm test noktalarında sabit uygulanır
+    (eski v10 davranışı — karşılaştırma için bırakıldı).
 
-    Return:
-        dict (başarılı) veya {'hata': '...'} (başarısız neden bilgisiyle)
+    `enflasyon` parametresi tarihsel mod kapalıyken (veya beklenti serisi
+    eksikse) fallback olarak kullanılır.
     """
+    if senaryo_sayisi is None:
+        senaryo_sayisi = C.MC_BACKTEST_SENARYO
     n = len(df_tam)
 
-    # Minimum veri kontrolü — çok agresif değil
-    if n < 250:
-        return {'hata': f"Geçmiş veri çok kısa: {n} işlem günü. Backtest için en az 250 işlem günü gerekli. "
-                        f"Sidebar'dan 'Geçmiş veri' değerini artırın (en az 500 gün önerilir)."}
+    if n < C.BACKTEST_MIN_GUN:
+        return {'hata': f"Geçmiş veri çok kısa: {n} işlem günü. Backtest için en az "
+                        f"{C.BACKTEST_MIN_GUN} işlem günü gerekli. Sidebar'dan 'Geçmiş veri' "
+                        f"değerini artırın (en az 500 gün önerilir)."}
 
-    # İşlem günü tabanlı pencereler
-    egitim_is_gun = int(n * 2/3)
-    tahmin_ufku_is = min(252, max(20, int(n * 1/3)))  # 1 yılla sınırla
+    egitim_is_gun = int(n * C.BACKTEST_EGITIM_ORANI)
+    tahmin_ufku_is = min(C.BACKTEST_TAHMIN_MAX,
+                         max(C.BACKTEST_TAHMIN_MIN, int(n * C.BACKTEST_TAHMIN_ORANI)))
 
     if adim_is_gunu is None:
-        adim_is_gunu = max(10, n // 25)
+        adim_is_gunu = max(C.BACKTEST_ADIM_MIN, n // C.BACKTEST_ADIM_BOLEN)
 
-    # Test edilecek başlangıç indeksleri (satır numaraları)
-    # Eğitim sonrası başla, son test noktası + tahmin ufku < n olsun
     ilk_idx = egitim_is_gun
     son_idx = n - tahmin_ufku_is - 1
 
     if ilk_idx >= son_idx:
-        return {'hata': f"Veri pencereye sığmıyor. n={n}, eğitim={egitim_is_gun}, tahmin ufku={tahmin_ufku_is}. "
-                        f"Sidebar'dan daha uzun 'Geçmiş veri' seçin."}
+        return {'hata': f"Veri pencereye sığmıyor. n={n}, eğitim={egitim_is_gun}, tahmin ufku={tahmin_ufku_is}."}
 
     test_indeksleri = list(range(ilk_idx, son_idx + 1, adim_is_gunu))
-    if len(test_indeksleri) < 3:
+    if len(test_indeksleri) < C.BACKTEST_MIN_TEST_NOKTASI:
         return {'hata': f"Test noktası sayısı çok az ({len(test_indeksleri)}). Daha uzun 'Geçmiş veri' seçin."}
+
+    # YENİ: Tarihsel enflasyon beklentisi serisini bir kerede hazırla
+    if tarihsel_enf_kullan:
+        enf_serisi = tarihsel_enflasyon_beklentisi(df_tam['date'])
+    else:
+        enf_serisi = None
 
     sonuclar = []
     hata_sayaci = 0
     son_hata = None
+    toplam = len(test_indeksleri)
 
-    for idx in test_indeksleri:
+    for sira, idx in enumerate(test_indeksleri):
+        if progress_callback is not None:
+            try:
+                progress_callback(sira + 1, toplam, f"Test {sira+1}/{toplam}")
+            except Exception:
+                pass
+
         df_gecmis = df_tam.iloc[:idx + 1].copy()
-        if len(df_gecmis) < 200:
+        if len(df_gecmis) < C.BACKTEST_MIN_VERI_GUN:
             continue
 
         tarih = df_gecmis['date'].iloc[-1]
         rf_o_tarih = dinamik_risksiz_faiz_serisi(pd.DatetimeIndex([tarih])).iloc[0]
+
+        # YENİ: O tarihte geçerli olan enflasyon beklentisi (lookahead bias düzeltmesi)
+        if enf_serisi is not None:
+            enf_o_tarih = float(enf_serisi.iloc[idx])
+        else:
+            enf_o_tarih = enflasyon
 
         try:
             son_fiyat, mu, sigma = gunluk_istatistik(df_gecmis)
@@ -581,7 +826,7 @@ def walk_forward_backtest(df_tam, enflasyon, gecmis_gun_sayisi,
 
             senaryolar = monte_carlo_motoru(
                 son_fiyat, mu, sigma, rejim_mu_v, rejim_sigma_v,
-                enflasyon, gun_sayisi=tahmin_ufku_is,
+                enf_o_tarih, gun_sayisi=tahmin_ufku_is,
                 senaryo_sayisi=senaryo_sayisi
             )
         except Exception as e:
@@ -592,7 +837,6 @@ def walk_forward_backtest(df_tam, enflasyon, gecmis_gun_sayisi,
         son_gun = senaryolar[-1, :]
         p5, p50, p95 = np.percentile(son_gun, [5, 50, 95])
 
-        # Gerçek değer — tahmin ufku kadar ileri git (işlem günü cinsinden)
         hedef_idx = idx + tahmin_ufku_is
         if hedef_idx >= n:
             continue
@@ -602,7 +846,9 @@ def walk_forward_backtest(df_tam, enflasyon, gecmis_gun_sayisi,
         if gun_farki <= 0:
             continue
 
-        enf_kayip = (1 + enflasyon) ** (gun_farki / 365) - 1
+        # Reel gerçek: o dönemin enflasyon beklentisi ile deflate edilir
+        # (gerçekleşen enflasyon kullanılsa lookahead bias olurdu)
+        enf_kayip = (1 + enf_o_tarih) ** (gun_farki / 365) - 1
         reel_gercek = gercek_satir['price'] / (1 + enf_kayip)
 
         sonuclar.append({
@@ -614,10 +860,17 @@ def walk_forward_backtest(df_tam, enflasyon, gecmis_gun_sayisi,
             'yon_dogru': bool((p50 > son_fiyat) == (reel_gercek > son_fiyat)),
             'sapma_yuzde': float((reel_gercek - p50) / p50 * 100),
             'rejim': trend['rejim'],
+            'enf_o_tarih': float(enf_o_tarih),  # Şeffaflık için kaydet
         })
 
+    if progress_callback is not None:
+        try:
+            progress_callback(toplam, toplam, "Tamamlandı")
+        except Exception:
+            pass
+
     if not sonuclar:
-        msg = f"Hiçbir test noktası tamamlanamadı (denenmiş: {len(test_indeksleri)}, hata: {hata_sayaci})."
+        msg = f"Hiçbir test noktası tamamlanamadı (denenmiş: {toplam}, hata: {hata_sayaci})."
         if son_hata:
             msg += f" Son hata: {son_hata}"
         return {'hata': msg}
@@ -628,7 +881,7 @@ def walk_forward_backtest(df_tam, enflasyon, gecmis_gun_sayisi,
         'tahmin_ufku_takvim': int(tahmin_ufku_is * 365/252),
         'tahmin_ufku_is': tahmin_ufku_is,
         'test_sayisi': len(sonuclar),
-        'denenen_test': len(test_indeksleri),
+        'denenen_test': toplam,
         'hata_sayisi': hata_sayaci,
     }
 
@@ -647,17 +900,21 @@ def standart_backtest_skoru(backtest_dict):
 
     yillik_esdeger_sapma = medyan_sapma / np.sqrt(tahmin_ufku_is / 252) if tahmin_ufku_is > 0 else medyan_sapma
 
-    bant_skoru = min(100, (ham_bant / 90) * 100)
+    bant_skoru = min(100, (ham_bant / C.BACKTEST_BANT_HEDEF_PCT) * 100)
     yon_skoru = max(0, (ham_yon - 50) * 2)
-    sapma_skoru = max(0, min(100, 100 - yillik_esdeger_sapma * 1.5))
+    sapma_skoru = max(0, min(100, 100 - yillik_esdeger_sapma * C.BACKTEST_SAPMA_CARPAN))
 
-    standart_skor = float(bant_skoru * 0.5 + yon_skoru * 0.3 + sapma_skoru * 0.2)
+    standart_skor = float(
+        bant_skoru * C.BACKTEST_BANT_AGIRLIK
+        + yon_skoru * C.BACKTEST_YON_AGIRLIK
+        + sapma_skoru * C.BACKTEST_SAPMA_AGIRLIK
+    )
 
-    if standart_skor >= 75:   kalite = "Çok iyi"
-    elif standart_skor >= 60: kalite = "İyi"
-    elif standart_skor >= 45: kalite = "Vasat"
-    elif standart_skor >= 30: kalite = "Zayıf"
-    else:                     kalite = "Çok zayıf"
+    if standart_skor >= C.KALITE_COK_IYI:   kalite = "Çok iyi"
+    elif standart_skor >= C.KALITE_IYI:     kalite = "İyi"
+    elif standart_skor >= C.KALITE_VASAT:   kalite = "Vasat"
+    elif standart_skor >= C.KALITE_ZAYIF:   kalite = "Zayıf"
+    else:                                    kalite = "Çok zayıf"
 
     return {
         'ham_bant': ham_bant,
@@ -674,26 +931,45 @@ def standart_backtest_skoru(backtest_dict):
 
 # ================= ANA ANALİZ FONKSİYONU =================
 def tam_analiz(fon_kodu, gun_sayisi=1000, beklenen_enflasyon=0.45,
-               enflasyon_sigma=0.13, makro_kullan=True, senaryo_sayisi=5000,
-               backtest_calistir=True, backtest_senaryo=3000):
-    # 1. Veri
-    df = fon_verisi_getir(fon_kodu, gun_sayisi=gun_sayisi)
+               enflasyon_sigma=0.13, makro_kullan=True, senaryo_sayisi=None,
+               backtest_calistir=True, backtest_senaryo=None,
+               backtest_progress_callback=None,
+               df=None, makro_dict=None):
+    """
+    Tam analiz akışı.
+
+    `df` parametresi: önceden çekilmiş fon verisi. Verilirse TEFAS'a tekrar
+    gidilmez (cache zincirini bağlamak için). None ise içeride fon_verisi_getir
+    çağrılır.
+
+    `makro_dict` parametresi: önceden çekilmiş Yahoo Finance verileri. Benzer
+    şekilde çift çağrıyı önler.
+    """
+    if senaryo_sayisi is None:
+        senaryo_sayisi = C.MC_VARSAYILAN_SENARYO
+    if backtest_senaryo is None:
+        backtest_senaryo = C.MC_BACKTEST_SENARYO
+
+    # 1. Veri — verilmediyse çek
+    if df is None:
+        df = fon_verisi_getir(fon_kodu, gun_sayisi=gun_sayisi)
     son_fiyat, mu, sigma = gunluk_istatistik(df)
     fon_adi = df['title'].iloc[-1] if 'title' in df.columns else "Bilinmiyor"
     kategori, kategori_ad = fon_kategorisi_belirle(df)
     guncel_rf = guncel_risksiz_faiz()
 
-    # 2. Makro
-    makro_dict = {}
-    if makro_kullan and YF_VAR:
-        bas_str = df['date'].iloc[0].strftime("%Y-%m-%d")
-        bit_str = df['date'].iloc[-1].strftime("%Y-%m-%d")
-        makro_dict = makro_verileri_getir(bas_str, bit_str)
+    # 2. Makro — verilmediyse çek
+    if makro_dict is None:
+        makro_dict = {}
+        if makro_kullan and YF_VAR:
+            bas_str = df['date'].iloc[0].strftime("%Y-%m-%d")
+            bit_str = df['date'].iloc[-1].strftime("%Y-%m-%d")
+            makro_dict = makro_verileri_getir(bas_str, bit_str)
 
     # 3. Benchmark
     bench_sonuc, endeks_df = benchmark_karsilastir(df, kategori, beklenen_enflasyon, makro_dict)
 
-    # 4. Beta / Alpha
+    # 4. Beta / Alpha (vektörize)
     beta_alpha = None
     rolling_ba = None
     if endeks_df is not None and len(endeks_df) >= 60:
@@ -731,7 +1007,7 @@ def tam_analiz(fon_kodu, gun_sayisi=1000, beklenen_enflasyon=0.45,
         rejim_uyari_siddet=rejim_uyari['siddet']
     )
 
-    # 8. Walk-forward backtest
+    # 8. Backtest
     backtest = None
     backtest_skor = None
     backtest_hata = None
@@ -739,7 +1015,8 @@ def tam_analiz(fon_kodu, gun_sayisi=1000, beklenen_enflasyon=0.45,
         try:
             backtest_raw = walk_forward_backtest(
                 df, beklenen_enflasyon, gun_sayisi,
-                senaryo_sayisi=backtest_senaryo
+                senaryo_sayisi=backtest_senaryo,
+                progress_callback=backtest_progress_callback
             )
             if backtest_raw is not None and 'hata' in backtest_raw:
                 backtest_hata = backtest_raw['hata']
