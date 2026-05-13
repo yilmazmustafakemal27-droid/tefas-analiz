@@ -35,7 +35,7 @@ def fon_verisi_getir(fon_kodu, gun_sayisi=1000, columns=None):
     if veri is None or veri.empty:
         raise ValueError(f"{fon_kodu} kodlu fon bulunamadı veya verisi boş.")
     df = pd.DataFrame(veri)
-    df['date'] = pd.to_datetime(df['date'])
+    df['date'] = pd.to_datetime(df['date']).astype('datetime64[us]')
     df = df.sort_values('date').drop_duplicates('date').reset_index(drop=True)
     df['getiri'] = df['price'].pct_change()
     return df
@@ -59,7 +59,7 @@ def dinamik_risksiz_faiz_serisi(tarih_indeksi):
         ("2026-04-01", 0.36),
     ]
     df_faiz = pd.DataFrame(tarihsel, columns=['date', 'faiz'])
-    df_faiz['date'] = pd.to_datetime(df_faiz['date'])
+    df_faiz['date'] = pd.to_datetime(df_faiz['date']).astype('datetime64[us]')
     df_faiz = df_faiz.sort_values('date')
 
     df_tarih = pd.DataFrame({'date': tarih_indeksi})
@@ -143,9 +143,8 @@ def makro_verileri_getir(baslangic_tarihi, bitis_tarihi):
             d = data[['Close']].reset_index()
             d.columns = ['date', 'price']
             
-            # GÜNCELLEME: tz_localize(None) sonrasına dt.normalize() eklendi
-            d['date'] = pd.to_datetime(d['date']).dt.tz_localize(None).dt.normalize()
-            
+            d['date'] = pd.to_datetime(d['date']).dt.tz_localize(None).astype('datetime64[us]')
+
             d['getiri'] = d['price'].pct_change()
             sonuclar[isim] = d
         except Exception:
