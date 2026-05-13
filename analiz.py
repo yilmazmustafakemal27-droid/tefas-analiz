@@ -4,9 +4,9 @@ TEFAS Fon Analiz Motoru
 Streamlit UI'dan bağımsız, import edilebilir analiz modülü.
 Tüm fonksiyonlar saf — yan etki yok, print yok.
 
-v8 GÜNCELLEMELERİ:
-- Dinamik walk-forward backtest (2/3 eğitim, 1/3 tahmin)
-- Standart backtest skoru (ufuk-bağımsız, √t ile normalize)
+v9 GÜNCELLEMELERİ:
+- walk_forward_backtest düzeltildi (işlem günü tabanlı, anlamlı hata mesajları)
+- Backtest neden çalışmadığını söyleyen 'hata' alanı eklendi
 """
 import warnings
 warnings.filterwarnings("ignore")
@@ -142,9 +142,7 @@ def makro_verileri_getir(baslangic_tarihi, bitis_tarihi):
                 continue
             d = data[['Close']].reset_index()
             d.columns = ['date', 'price']
-            
             d['date'] = pd.to_datetime(d['date']).dt.tz_localize(None).astype('datetime64[us]')
-
             d['getiri'] = d['price'].pct_change()
             sonuclar[isim] = d
         except Exception:
@@ -407,15 +405,11 @@ def monte_carlo_motoru(baslangic_fiyati, mu_genel, sigma_genel,
     return np.vstack([np.full(senaryo_sayisi, baslangic_fiyati), yollar])
 
 
-# ================= 11. SİNYAL GRUPLARI (KARAR DEĞİL — BİLGİ) =================
+# ================= 11. SİNYAL GRUPLARI =================
 def sinyal_gruplari_uret(z_skor, sma_skor, rsi_skor,
                          sharpe, drawdown_guncel,
                          alpha_yillik, info_ratio,
                          rejim_uyari_siddet=0):
-    """
-    Yol 1: AL/SAT yok. Sadece skor + 'değerlendirme' yorumu.
-    Kullanıcı kendi karar verir.
-    """
     grup_degerleme = float(np.clip(50 - z_skor * 25, 0, 100))
     grup_trend = (sma_skor + rsi_skor) / 2
 
@@ -514,75 +508,102 @@ def benchmark_karsilastir(fon_df, kategori, enflasyon_yillik, makro_dict):
     return sonuc, endeks_df
 
 
-# ================= 13. WALK-FORWARD BACKTEST (YENİ — DİNAMİK) =================
+# ================= 13. WALK-FORWARD BACKTEST (DÜZELTİLDİ — İŞLEM GÜNÜ TABANLI) =================
 def walk_forward_backtest(df_tam, enflasyon, gecmis_gun_sayisi,
-                          adim=None, senaryo_sayisi=3000):
+                          adim_is_gunu=None, senaryo_sayisi=3000):
     """
-    DİNAMİK PENCERE:
-    - Eğitim verisi:    gecmis_gun_sayisi * 2/3
-    - Tahmin ufku:      gecmis_gun_sayisi * 1/3 (takvim günü)
+    DÜZELTİLDİ: Artık tamamen İŞLEM GÜNÜ tabanında çalışır.
+    Önceki sürümde takvim günü/işlem günü karışıklığı vardı.
 
-    Örnekler:
-        1000 gün → 666 eğitim, 333 tahmin ufku
-        600 gün  → 400 eğitim, 200 tahmin ufku
-        100 gün  → 66 eğitim,  33 tahmin ufku
+    Mantık:
+    - Mevcut veri satır sayısı (n) üzerinden hesaplanır
+    - Eğitim penceresi:  n * 2/3 işlem günü
+    - Tahmin ufku:       n * 1/3 işlem günü (en fazla 252 = 1 yıl)
+    - Test adımı:        n / 25 (minimum 10 işlem günü)
 
-    Her test noktasında SADECE o tarihe kadarki veri kullanılır
-    (look-ahead bias yok).
+    Her test noktasında SADECE o satıra kadarki veri kullanılır.
 
-    Adım otomatik: gecmis_gun_sayisi / 20 (minimum 20).
+    Return:
+        dict (başarılı) veya {'hata': '...'} (başarısız neden bilgisiyle)
     """
-    egitim_gun = int(gecmis_gun_sayisi * 2/3)
-    tahmin_ufku_takvim = int(gecmis_gun_sayisi * 1/3)
-    tahmin_ufku_is = max(20, int(tahmin_ufku_takvim * 252/365))
+    n = len(df_tam)
 
-    if adim is None:
-        adim = max(20, gecmis_gun_sayisi // 20)
+    # Minimum veri kontrolü — çok agresif değil
+    if n < 250:
+        return {'hata': f"Geçmiş veri çok kısa: {n} işlem günü. Backtest için en az 250 işlem günü gerekli. "
+                        f"Sidebar'dan 'Geçmiş veri' değerini artırın (en az 500 gün önerilir)."}
 
-    en_erken = df_tam['date'].iloc[0] + timedelta(days=egitim_gun)
-    en_gec = df_tam['date'].iloc[-1] - timedelta(days=tahmin_ufku_takvim + 5)
+    # İşlem günü tabanlı pencereler
+    egitim_is_gun = int(n * 2/3)
+    tahmin_ufku_is = min(252, max(20, int(n * 1/3)))  # 1 yılla sınırla
 
-    if en_erken >= en_gec:
-        return None
+    if adim_is_gunu is None:
+        adim_is_gunu = max(10, n // 25)
 
-    test_tarihleri = pd.date_range(en_erken, en_gec, freq=f'{adim}D')
-    if len(test_tarihleri) < 3:
-        return None
+    # Test edilecek başlangıç indeksleri (satır numaraları)
+    # Eğitim sonrası başla, son test noktası + tahmin ufku < n olsun
+    ilk_idx = egitim_is_gun
+    son_idx = n - tahmin_ufku_is - 1
+
+    if ilk_idx >= son_idx:
+        return {'hata': f"Veri pencereye sığmıyor. n={n}, eğitim={egitim_is_gun}, tahmin ufku={tahmin_ufku_is}. "
+                        f"Sidebar'dan daha uzun 'Geçmiş veri' seçin."}
+
+    test_indeksleri = list(range(ilk_idx, son_idx + 1, adim_is_gunu))
+    if len(test_indeksleri) < 3:
+        return {'hata': f"Test noktası sayısı çok az ({len(test_indeksleri)}). Daha uzun 'Geçmiş veri' seçin."}
 
     sonuclar = []
-    for tarih in test_tarihleri:
-        df_gecmis = df_tam[df_tam['date'] <= tarih].copy()
+    hata_sayaci = 0
+    son_hata = None
+
+    for idx in test_indeksleri:
+        df_gecmis = df_tam.iloc[:idx + 1].copy()
         if len(df_gecmis) < 200:
             continue
 
+        tarih = df_gecmis['date'].iloc[-1]
         rf_o_tarih = dinamik_risksiz_faiz_serisi(pd.DatetimeIndex([tarih])).iloc[0]
+
         try:
             son_fiyat, mu, sigma = gunluk_istatistik(df_gecmis)
+            if pd.isna(mu) or pd.isna(sigma) or sigma == 0:
+                continue
+
             rejim_stat = rejim_mu_sigma(df_gecmis, rf_o_tarih)
             trend = trend_rejimi(df_gecmis, rf_o_tarih)
             rejim_mu_v = rejim_stat[trend['rejim']]['mu']
             rejim_sigma_v = rejim_stat[trend['rejim']]['sigma']
+
+            if pd.isna(rejim_mu_v) or pd.isna(rejim_sigma_v) or rejim_sigma_v == 0:
+                rejim_mu_v = mu
+                rejim_sigma_v = sigma
 
             senaryolar = monte_carlo_motoru(
                 son_fiyat, mu, sigma, rejim_mu_v, rejim_sigma_v,
                 enflasyon, gun_sayisi=tahmin_ufku_is,
                 senaryo_sayisi=senaryo_sayisi
             )
-        except Exception:
+        except Exception as e:
+            hata_sayaci += 1
+            son_hata = str(e)
             continue
 
         son_gun = senaryolar[-1, :]
         p5, p50, p95 = np.percentile(son_gun, [5, 50, 95])
 
-        hedef_t = tarih + timedelta(days=tahmin_ufku_takvim)
-        df_sonra = df_tam[df_tam['date'] >= hedef_t]
-        if len(df_sonra) == 0:
+        # Gerçek değer — tahmin ufku kadar ileri git (işlem günü cinsinden)
+        hedef_idx = idx + tahmin_ufku_is
+        if hedef_idx >= n:
             continue
 
-        gercek = df_sonra.iloc[0]
-        gun_farki = (gercek['date'] - tarih).days
+        gercek_satir = df_tam.iloc[hedef_idx]
+        gun_farki = (gercek_satir['date'] - tarih).days
+        if gun_farki <= 0:
+            continue
+
         enf_kayip = (1 + enflasyon) ** (gun_farki / 365) - 1
-        reel_gercek = gercek['price'] / (1 + enf_kayip)
+        reel_gercek = gercek_satir['price'] / (1 + enf_kayip)
 
         sonuclar.append({
             'test_tarihi': tarih,
@@ -596,28 +617,25 @@ def walk_forward_backtest(df_tam, enflasyon, gecmis_gun_sayisi,
         })
 
     if not sonuclar:
-        return None
+        msg = f"Hiçbir test noktası tamamlanamadı (denenmiş: {len(test_indeksleri)}, hata: {hata_sayaci})."
+        if son_hata:
+            msg += f" Son hata: {son_hata}"
+        return {'hata': msg}
+
     return {
         'sonuclar': pd.DataFrame(sonuclar),
-        'egitim_gun': egitim_gun,
-        'tahmin_ufku_takvim': tahmin_ufku_takvim,
+        'egitim_gun': egitim_is_gun,
+        'tahmin_ufku_takvim': int(tahmin_ufku_is * 365/252),
         'tahmin_ufku_is': tahmin_ufku_is,
         'test_sayisi': len(sonuclar),
+        'denenen_test': len(test_indeksleri),
+        'hata_sayisi': hata_sayaci,
     }
 
 
-# ================= 14. STANDART BACKTEST SKORU (YENİ) =================
+# ================= 14. STANDART BACKTEST SKORU =================
 def standart_backtest_skoru(backtest_dict):
-    """
-    Ufuk-bağımsız standart skor.
-    Farklı GECMIS_GUN_SAYISI ayarlarında karşılaştırılabilir sonuç verir.
-
-    Yöntem:
-    - Bant kapsama: hedef %90, 100 üzerinden normalize
-    - Yön doğruluğu: random %50, 100 üzerinden normalize
-    - Sapma: √t kuralı ile yıllık eşdeğere çevrilir
-    """
-    if backtest_dict is None or backtest_dict['sonuclar'].empty:
+    if backtest_dict is None or 'sonuclar' not in backtest_dict or backtest_dict['sonuclar'].empty:
         return None
 
     df = backtest_dict['sonuclar']
@@ -627,15 +645,12 @@ def standart_backtest_skoru(backtest_dict):
     ham_yon = float(df['yon_dogru'].mean() * 100)
     medyan_sapma = float(df['sapma_yuzde'].abs().median())
 
-    # √t kuralı: belirsizlik zamanın karekökü ile büyür
     yillik_esdeger_sapma = medyan_sapma / np.sqrt(tahmin_ufku_is / 252) if tahmin_ufku_is > 0 else medyan_sapma
 
-    # 0-100 standart skor bileşenleri
-    bant_skoru = min(100, (ham_bant / 90) * 100)        # %90 hedef
-    yon_skoru = max(0, (ham_yon - 50) * 2)              # %50 random
+    bant_skoru = min(100, (ham_bant / 90) * 100)
+    yon_skoru = max(0, (ham_yon - 50) * 2)
     sapma_skoru = max(0, min(100, 100 - yillik_esdeger_sapma * 1.5))
 
-    # Ağırlıklı toplam: bant 50%, yön 30%, sapma 20%
     standart_skor = float(bant_skoru * 0.5 + yon_skoru * 0.3 + sapma_skoru * 0.2)
 
     if standart_skor >= 75:   kalite = "Çok iyi"
@@ -657,18 +672,10 @@ def standart_backtest_skoru(backtest_dict):
     }
 
 
-# ================= ANA ANALİZ FONKSİYONU (UI BUNU ÇAĞIRACAK) =================
+# ================= ANA ANALİZ FONKSİYONU =================
 def tam_analiz(fon_kodu, gun_sayisi=1000, beklenen_enflasyon=0.45,
                enflasyon_sigma=0.13, makro_kullan=True, senaryo_sayisi=5000,
                backtest_calistir=True, backtest_senaryo=3000):
-    """
-    Tek fonksiyon — tüm analizi yapar, dict döndürür.
-    UI sadece bunu çağırır.
-
-    Backtest:
-    - Dinamik pencere: gun_sayisi'nin 2/3'ü eğitim, 1/3'ü tahmin ufku
-    - Standart skor üretilir (ufuk-bağımsız)
-    """
     # 1. Veri
     df = fon_verisi_getir(fon_kodu, gun_sayisi=gun_sayisi)
     son_fiyat, mu, sigma = gunluk_istatistik(df)
@@ -724,20 +731,23 @@ def tam_analiz(fon_kodu, gun_sayisi=1000, beklenen_enflasyon=0.45,
         rejim_uyari_siddet=rejim_uyari['siddet']
     )
 
-    # 8. Walk-forward backtest (YENİ)
+    # 8. Walk-forward backtest
     backtest = None
     backtest_skor = None
+    backtest_hata = None
     if backtest_calistir:
         try:
-            backtest = walk_forward_backtest(
+            backtest_raw = walk_forward_backtest(
                 df, beklenen_enflasyon, gun_sayisi,
                 senaryo_sayisi=backtest_senaryo
             )
-            if backtest is not None:
+            if backtest_raw is not None and 'hata' in backtest_raw:
+                backtest_hata = backtest_raw['hata']
+            elif backtest_raw is not None:
+                backtest = backtest_raw
                 backtest_skor = standart_backtest_skoru(backtest)
-        except Exception:
-            backtest = None
-            backtest_skor = None
+        except Exception as e:
+            backtest_hata = f"Beklenmeyen hata: {e}"
 
     return {
         'fon_kodu': fon_kodu,
@@ -769,4 +779,5 @@ def tam_analiz(fon_kodu, gun_sayisi=1000, beklenen_enflasyon=0.45,
         'sinyal': sinyal,
         'backtest': backtest,
         'backtest_skor': backtest_skor,
+        'backtest_hata': backtest_hata,
     }
