@@ -9,6 +9,14 @@ Kurallar:
 - Yüzdeler ondalık olarak (0.45 = %45)
 - Pencereler ve gün sayıları int
 - Grup başlıkları içinde mantıksal olarak sıralı
+
+DEĞİŞİKLİK NOTU (v12):
+- Backtest oranları yeniden dengelendi. Önceki 2/3 - 1/3 ayarı 800 gün
+  gibi yaygın bir veri uzunluğunda yalnızca 1 test noktası üretiyordu;
+  bu da `BACKTEST_MIN_TEST_NOKTASI=3` eşiğinin altında kaldığı için
+  backtest sessizce iptal oluyordu. Yeni oranlar (3/5 eğitim, 1/5
+  tahmin, tahmin ufku 60-180 iş günü) 500+ gün için en az 4 test
+  noktası üretiyor.
 """
 
 # ============================================================
@@ -148,13 +156,24 @@ ROLLING_MIN_EK_GUN = 30              # pencere + 30 minimum gözlem
 # ============================================================
 # BACKTEST PARAMETRELERİ
 # ============================================================
+# v12 dengelemesi: 500+ gün için en az 4 test noktası garantilenir.
+# Önceki ayar (2/3 eğitim, 1/3 tahmin, tahmin_max=252) tahmin ufkunu
+# 252'ye sıkıştırıp test aralığını çok daraltıyordu. Yeni ayar daha
+# kısa tahmin ufku ile daha çok pencere üretiyor.
+#
+# Beklenen test noktası sayısı:
+#   n=500  → 4
+#   n=800  → 4
+#   n=1000 → 5
+#   n=1500 → 6
+#   n=2000 → 7
 BACKTEST_MIN_GUN = 250
-BACKTEST_EGITIM_ORANI = 2/3
-BACKTEST_TAHMIN_ORANI = 1/3
-BACKTEST_TAHMIN_MIN = 20
-BACKTEST_TAHMIN_MAX = 252
-BACKTEST_ADIM_BOLEN = 25             # n // 25 → kaç adımda bir test
-BACKTEST_ADIM_MIN = 10
+BACKTEST_EGITIM_ORANI = 3/5          # %60 eğitim (önce 2/3)
+BACKTEST_TAHMIN_ORANI = 1/5          # %20 tahmin ufku (önce 1/3)
+BACKTEST_TAHMIN_MIN = 60             # En az 3 ay iş günü (önce 20 — çok gürültülü)
+BACKTEST_TAHMIN_MAX = 180            # En fazla ~9 ay iş günü (önce 252)
+BACKTEST_ADIM_BOLEN = 20             # n // 20 → kaç adımda bir test (önce 25)
+BACKTEST_ADIM_MIN = 15               # Çok sık örnekleme → otokorelasyon (önce 10)
 BACKTEST_MIN_TEST_NOKTASI = 3
 BACKTEST_MIN_VERI_GUN = 200          # df_gecmis için minimum
 
