@@ -1,6 +1,24 @@
 """
-TEFAS Fon Analiz Motoru — v11
+TEFAS Fon Analiz Motoru — v12
 ==============================
+v12 GÜNCELLEMELERİ:
+- Sortino formülü düzeltildi: downside deviation artık sadece negatif getiriler
+  üzerinden hesaplanıyor (eski formül pozitif günleri de dahil ettiğinden
+  Sortino'yu suni olarak şişiriyordu — testte ~4.5x bias gözlendi)
+- RSI'da `kayip=0` durumu için `replace(0, NaN)` koruması eklendi (sürekli
+  yükselişte temiz 100 üretiyor, `inf` warning'i ortadan kaldırıldı)
+- RSI etiketleri düzeltildi: 30-50 bandı "Negatif" yerine "Nötr-zayıf",
+  50-70 bandı "Pozitif" yerine "Nötr-pozitif" (klasik RSI nötr bölgesi 30-70)
+- Walk-forward backtest: RF serisi döngü öncesi tek seferde hesaplanıyor
+  (50+ test noktası için merge_asof tekrarı önlendi)
+- df_tam.reset_index(drop=True) güvencesi eklendi (iloc tabanlı erişim için)
+- Monte Carlo'ya opsiyonel `rng` parametresi: reproducibility için
+  np.random.default_rng(seed) geçilebilir
+- Sessiz `except Exception: pass` blokları logger.warning/debug ile değiştirildi
+  (EVDS, YFinance, progress_callback hataları artık görülebilir)
+- Eşlik eden config.py de v12'ye güncellendi: backtest oranları yeniden
+  dengelendi (500+ gün için en az 4 test noktası)
+
 v11 GÜNCELLEMELERİ:
 - Tüm magic number'lar config.py'ye taşındı
 - EVDS API entegrasyonu (risksiz faiz dinamik çekiliyor, fallback hardcoded liste)
@@ -19,6 +37,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import os
+import logging
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -26,6 +45,8 @@ from scipy import stats
 from tefas import Crawler
 
 import config as C
+
+logger = logging.getLogger(__name__)
 
 try:
     import yfinance as yf
@@ -95,7 +116,8 @@ def _evds_faiz_serisi_cek():
         try:
             import streamlit as st
             api_key = st.secrets.get('EVDS_API_KEY')
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Streamlit secrets okunamadı: {e}")
             api_key = None
 
     if not api_key:
@@ -144,7 +166,8 @@ def _evds_faiz_serisi_cek():
         _EVDS_FAIZ_CACHE = df
         _EVDS_FAIZ_CACHE_TARIH = datetime.now()
         return df
-    except Exception:
+    except Exception as e:
+        logger.warning(f"EVDS faiz serisi çekilemedi, fallback kullanılacak: {e}")
         return None
 
 
@@ -266,7 +289,8 @@ def makro_verileri_getir(baslangic_tarihi, bitis_tarihi):
             d['price'] = d['price'].ffill()
             d['getiri'] = d['price'].pct_change()
             sonuclar[isim] = d
-        except Exception:
+        except Exception as e:
+            logger.warning(f"YFinance '{sembol}' ({isim}) indirilemedi: {e}")
             continue
 
     if 'ALTIN_USD' in sonuclar and 'USDTRY' in sonuclar:
@@ -438,14 +462,21 @@ def rsi_skoru(df):
     kazanc = delta.where(delta > 0, 0).ewm(alpha=1/C.RSI_PENCERE, adjust=False).mean()
     kayip  = -delta.where(delta < 0, 0).ewm(alpha=1/C.RSI_PENCERE, adjust=False).mean()
     # -------------------------------------------------
-    rs = kazanc / kayip
-    rsi = (100 - 100 / (1 + rs)).iloc[-1]
+    # Sıfıra bölme koruması: kayip=0 ise rs=inf → rsi=100 olmalı
+    rs = kazanc / kayip.replace(0, np.nan)
+    rsi_serisi = 100 - 100 / (1 + rs)
+    rsi = rsi_serisi.iloc[-1]
     if pd.isna(rsi):
-        return {'rsi': None, 'skor': 50, 'yorum': "N/A"}
+        # kayip sıfırsa ve kazanc varsa: aşırı alım (RSI=100)
+        # her ikisi de sıfırsa: nötr
+        if not pd.isna(kazanc.iloc[-1]) and kazanc.iloc[-1] > 0:
+            rsi = 100.0
+        else:
+            return {'rsi': None, 'skor': 50, 'yorum': "N/A"}
     if rsi > C.RSI_ASIRI_ALIM_YUKSEK:   s, y = 15, "Aşırı alım (yüksek)"
     elif rsi > C.RSI_ASIRI_ALIM:        s, y = 35, "Aşırı alım"
-    elif rsi > C.RSI_NOTR_UST:          s, y = 65, "Pozitif"
-    elif rsi > C.RSI_NOTR_ALT:          s, y = 50, "Negatif"
+    elif rsi > C.RSI_NOTR_UST:          s, y = 65, "Nötr-pozitif"
+    elif rsi > C.RSI_NOTR_ALT:          s, y = 50, "Nötr-zayıf"
     elif rsi > C.RSI_ASIRI_SATIM_DUSUK: s, y = 75, "Aşırı satım"
     else:                                s, y = 90, "Aşırı satım (düşük)"
     return {'rsi': float(rsi), 'skor': s, 'yorum': y}
@@ -464,8 +495,16 @@ def risk_metrikleri(df):
 
     if len(fazla) > 0 and np.std(fazla) > 0:
         sharpe = (np.mean(fazla) / np.std(fazla)) * np.sqrt(252)
-        downside = np.sqrt(np.mean(np.minimum(0, fazla)**2))
-        sortino = (np.mean(fazla) / downside) * np.sqrt(252) if downside > 0 else 0
+        # Sortino: downside deviation sadece negatif fazla getirilerin RMS'i.
+        # Pozitif günler dahil edilmemeli — yoksa pozitif günler bolken
+        # downside suni olarak küçük çıkar ve Sortino şişer.
+        negatif = fazla[fazla < 0]
+        if len(negatif) > 0:
+            downside = np.sqrt(np.mean(negatif ** 2))
+            sortino = (np.mean(fazla) / downside) * np.sqrt(252) if downside > 0 else 0
+        else:
+            # Hiç negatif gün yoksa: aşağı yön riski tanımsız
+            sortino = float('inf') if np.mean(fazla) > 0 else 0
     else:
         sharpe, sortino = 0, 0
 
@@ -613,21 +652,32 @@ def rolling_sharpe(fon_df, pencere=None):
 def monte_carlo_motoru(baslangic_fiyati, mu_genel, sigma_genel,
                       rejim_mu, rejim_sigma,
                       enflasyon_orani, enflasyon_sigma_yillik=0.13,
-                      gun_sayisi=252, senaryo_sayisi=None, df_t=None):
+                      gun_sayisi=252, senaryo_sayisi=None, df_t=None,
+                      rng=None):
+    """
+    Monte Carlo simülasyon motoru.
+
+    rng: opsiyonel np.random.Generator. Reproducibility istiyorsan
+         `rng=np.random.default_rng(42)` gibi geç. None ise her çağrıda
+         farklı sonuç üretilir (varsayılan davranış).
+    """
     if senaryo_sayisi is None:
         senaryo_sayisi = C.MC_VARSAYILAN_SENARYO
     if df_t is None:
         df_t = C.MC_T_DAGILIM_DF
+    if rng is None:
+        rng = np.random.default_rng()
+
     duzeltilmis_mu    = mu_genel * (1 - C.MC_REJIM_AGIRLIK_MU) + rejim_mu * C.MC_REJIM_AGIRLIK_MU
     duzeltilmis_sigma = sigma_genel * (1 - C.MC_REJIM_AGIRLIK_SIGMA) + rejim_sigma * C.MC_REJIM_AGIRLIK_SIGMA
     varyans_t = df_t / (df_t - 2)
-    t_norm = np.random.standard_t(df_t,
-                                  size=(gun_sayisi - 1, senaryo_sayisi)) / np.sqrt(varyans_t)
+    t_norm = rng.standard_t(df_t,
+                            size=(gun_sayisi - 1, senaryo_sayisi)) / np.sqrt(varyans_t)
     nominal_soklar = duzeltilmis_mu + duzeltilmis_sigma * t_norm
     gunluk_enf_mu    = (1 + enflasyon_orani) ** (1/252) - 1
     gunluk_enf_sigma = enflasyon_sigma_yillik / np.sqrt(252)
-    enf_soklari = np.random.normal(gunluk_enf_mu, gunluk_enf_sigma,
-                                  size=(gun_sayisi - 1, senaryo_sayisi))
+    enf_soklari = rng.normal(gunluk_enf_mu, gunluk_enf_sigma,
+                             size=(gun_sayisi - 1, senaryo_sayisi))
     reel_soklar = (1 + nominal_soklar) / (1 + enf_soklari)
     yollar = baslangic_fiyati * np.cumprod(reel_soklar, axis=0)
     return np.vstack([np.full(senaryo_sayisi, baslangic_fiyati), yollar])
@@ -757,6 +807,10 @@ def walk_forward_backtest(df_tam, enflasyon, gecmis_gun_sayisi,
     """
     if senaryo_sayisi is None:
         senaryo_sayisi = C.MC_BACKTEST_SENARYO
+
+    # Güvenlik: iloc[idx] tabanlı erişimlerin doğru çalışması için
+    # indeksin 0..n-1 olduğundan emin ol.
+    df_tam = df_tam.reset_index(drop=True)
     n = len(df_tam)
 
     if n < C.BACKTEST_MIN_GUN:
@@ -787,6 +841,10 @@ def walk_forward_backtest(df_tam, enflasyon, gecmis_gun_sayisi,
     else:
         enf_serisi = None
 
+    # PERFORMANS: RF serisini de döngü öncesi tek seferde hesapla
+    # (Her test noktasında dinamik_risksiz_faiz_serisi çağırmak yerine.)
+    rf_full_serisi = dinamik_risksiz_faiz_serisi(df_tam['date'])
+
     sonuclar = []
     hata_sayaci = 0
     son_hata = None
@@ -796,15 +854,15 @@ def walk_forward_backtest(df_tam, enflasyon, gecmis_gun_sayisi,
         if progress_callback is not None:
             try:
                 progress_callback(sira + 1, toplam, f"Test {sira+1}/{toplam}")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"progress_callback hata: {e}")
 
         df_gecmis = df_tam.iloc[:idx + 1].copy()
         if len(df_gecmis) < C.BACKTEST_MIN_VERI_GUN:
             continue
 
         tarih = df_gecmis['date'].iloc[-1]
-        rf_o_tarih = dinamik_risksiz_faiz_serisi(pd.DatetimeIndex([tarih])).iloc[0]
+        rf_o_tarih = float(rf_full_serisi.iloc[idx])
 
         # YENİ: O tarihte geçerli olan enflasyon beklentisi (lookahead bias düzeltmesi)
         if enf_serisi is not None:
@@ -868,8 +926,8 @@ def walk_forward_backtest(df_tam, enflasyon, gecmis_gun_sayisi,
     if progress_callback is not None:
         try:
             progress_callback(toplam, toplam, "Tamamlandı")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"progress_callback hata (bitiş): {e}")
 
     if not sonuclar:
         msg = f"Hiçbir test noktası tamamlanamadı (denenmiş: {toplam}, hata: {hata_sayaci})."
