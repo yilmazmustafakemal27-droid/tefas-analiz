@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 550" role="img" aria-label="Saglikli disti ve periodontitis karsilastirmasi">
+  <title>Periodontal anatomi: saglikli vs periodontitis</title>
+  <defs>
+    <linearGradient id="pEn" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f4f7fc"/><stop offset="100%" stop-color="#dbe1ea"/>
+    </linearGradient>
+    <linearGradient id="pDn" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f0d9a4"/><stop offset="100%" stop-color="#e0c17f"/>
+    </linearGradient>
+    <linearGradient id="pGum" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#eb99a0"/><stop offset="100%" stop-color="#d76f79"/>
+    </linearGradient>
+    <linearGradient id="pGumInf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d85c66"/><stop offset="100%" stop-color="#b23742"/>
+    </linearGradient>
+    <linearGradient id="pBone" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e3d6bb"/><stop offset="100%" stop-color="#cbbb98"/>
+    </linearGradient>
+    <style>
+      .lbl{font-family:Arial,Helvetica,sans-serif;font-size:12px;fill:#eef1ee;}
+      .hd{font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;fill:#f2f5f2;}
+      .ln{stroke:#dfe3df;stroke-width:1;fill:none;opacity:.8;}
+      .dot{fill:#dfe3df;}
+      .sem{fill:#e0cfa2;}
+    </style>
+  </defs>
+  <rect width="800" height="550" fill="#191d24"/>
+  <text class="hd" x="120" y="40" text-anchor="middle">Saglikli</text>
+  <text class="hd" x="600" y="40" text-anchor="middle">Periodontitis</text>
+  <line x1="400" y1="60" x2="400" y2="520" stroke="#3a424c" stroke-width="1" stroke-dasharray="5 5"/>
+
+  <!-- ===== HEALTHY PANEL (center tooth x~200) ===== -->
+  <g>
+    <!-- alveolar bone -->
+    <path d="M20 250 Q120 240 150 250 L150 500 L20 500 Z" fill="url(#pBone)"/>
+    <path d="M250 250 Q300 240 380 250 L380 500 L250 500 Z" fill="url(#pBone)"/>
+    <!-- tooth root (dentin) -->
+    <path d="M170 120 L230 120 L222 400 Q200 430 178 400 Z" fill="url(#pDn)"/>
+    <!-- cementum thin layer on root -->
+    <path d="M170 200 L166 400 Q178 424 178 400 Z" class="sem"/>
+    <path d="M230 200 L234 400 Q222 424 222 400 Z" class="sem"/>
+    <!-- crown enamel -->
+    <path d="M168 60 Q200 44 232 60 L230 130 L170 130 Z" fill="url(#pEn)"/>
+    <!-- CEJ line -->
+    <line x1="168" y1="128" x2="232" y2="128" stroke="#9aa0a8" stroke-width="1.5"/>
+    <!-- periodontal ligament (thin space, hatched) -->
+    <path d="M170 200 L166 400" stroke="#c98b91" stroke-width="4" fill="none" opacity="0.7"/>
+    <path d="M230 200 L234 400" stroke="#c98b91" stroke-width="4" fill="none" opacity="0.7"/>
+    <!-- gingiva healthy, snug, shallow sulcus -->
+    <path d="M120 250 Q150 200 168 150 L168 176 Q158 210 150 250 Z" fill="url(#pGum)"/>
+    <path d="M280 250 Q250 200 232 150 L232 176 Q242 210 250 250 Z" fill="url(#pGum)"/>
+    <!-- shallow sulcus marker -->
+    <path d="M168 150 L168 176" stroke="#7a2e35" stroke-width="2"/>
+  </g>
+
+  <!-- ===== DISEASE PANEL (center tooth x~600) ===== -->
+  <g>
+    <!-- alveolar bone with resorption (lower crest) -->
+    <path d="M420 330 Q500 320 550 330 L550 500 L420 500 Z" fill="url(#pBone)"/>
+    <path d="M650 330 Q700 320 780 330 L780 500 L650 500 Z" fill="url(#pBone)"/>
+    <!-- root -->
+    <path d="M570 120 L630 120 L622 410 Q600 440 578 410 Z" fill="url(#pDn)"/>
+    <path d="M570 200 L566 410 Q578 434 578 410 Z" class="sem"/>
+    <path d="M630 200 L634 410 Q622 434 622 410 Z" class="sem"/>
+    <!-- crown enamel -->
+    <path d="M568 60 Q600 44 632 60 L630 130 L570 130 Z" fill="url(#pEn)"/>
+    <line x1="568" y1="128" x2="632" y2="128" stroke="#9aa0a8" stroke-width="1.5"/>
+    <!-- PDL -->
+    <path d="M570 210 L566 410" stroke="#c98b91" stroke-width="4" fill="none" opacity="0.6"/>
+    <path d="M630 210 L634 410" stroke="#c98b91" stroke-width="4" fill="none" opacity="0.6"/>
+    <!-- receded, inflamed gingiva with deep pocket -->
+    <path d="M520 330 Q550 250 568 210 L568 300 Q560 320 550 330 Z" fill="url(#pGumInf)"/>
+    <path d="M680 330 Q650 250 632 210 L632 300 Q642 320 650 330 Z" fill="url(#pGumInf)"/>
+    <!-- deep periodontal pocket -->
+    <path d="M568 210 L568 300" stroke="#5c1f26" stroke-width="3"/>
+    <!-- calculus / tartar deposits -->
+    <path d="M562 220 Q556 250 560 290 Q566 300 570 300 L570 214 Z" fill="#c7a35a"/>
+    <ellipse cx="566" cy="240" rx="6" ry="10" fill="#b28a3e"/>
+    <ellipse cx="566" cy="270" rx="5" ry="9" fill="#b28a3e"/>
+    <!-- periodontal probe inserted into pocket -->
+    <rect x="600" y="150" width="5" height="150" rx="2" fill="#c9d2db"/>
+    <g stroke="#2a2f36" stroke-width="1.5">
+      <line x1="600" y1="220" x2="605" y2="220"/>
+      <line x1="600" y1="240" x2="605" y2="240"/>
+      <line x1="600" y1="260" x2="605" y2="260"/>
+      <line x1="600" y1="280" x2="605" y2="280"/>
+    </g>
+  </g>
+
+  <!-- healthy labels -->
+  <g>
+    <line class="ln" x1="200" y1="128" x2="60" y2="110"/><circle class="dot" cx="200" cy="128" r="2.5"/>
+    <text class="lbl" x="10" y="100">Mine-sement</text><text class="lbl" x="10" y="114">siniri</text>
+
+    <line class="ln" x1="168" y1="160" x2="60" y2="180"/><circle class="dot" cx="168" cy="160" r="2.5"/>
+    <text class="lbl" x="8" y="184">Gingival sulkus</text>
+
+    <line class="ln" x1="234" y1="300" x2="330" y2="290"/><circle class="dot" cx="234" cy="300" r="2.5"/>
+    <text class="lbl" x="300" y="294">Periodontal</text><text class="lbl" x="300" y="308">ligament</text>
+
+    <line class="ln" x1="100" y1="360" x2="30" y2="380"/><circle class="dot" cx="100" cy="360" r="2.5"/>
+    <text class="lbl" x="10" y="396">Alveol kemigi</text>
+  </g>
+
+  <!-- disease labels -->
+  <g>
+    <line class="ln" x1="568" y1="260" x2="470" y2="200"/><circle class="dot" cx="568" cy="260" r="2.5"/>
+    <text class="lbl" x="410" y="196">Periodontal cep</text>
+
+    <line class="ln" x1="566" y1="255" x2="700" y2="180"/><circle class="dot" cx="566" cy="255" r="2.5"/>
+    <text class="lbl" x="706" y="184">Dis tasi (plak)</text>
+
+    <line class="ln" x1="540" y1="330" x2="440" y2="360"/><circle class="dot" cx="540" cy="330" r="2.5"/>
+    <text class="lbl" x="410" y="378">Kemik kaybi /</text><text class="lbl" x="410" y="392">dis eti cekilmesi</text>
+
+    <line class="ln" x1="600" y1="170" x2="700" y2="130"/><circle class="dot" cx="600" cy="170" r="2.5"/>
+    <text class="lbl" x="706" y="134">Periodontal prob</text>
+  </g>
+</svg>

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DentaLab 3D — İnteraktif Diş Hekimliği Öğrenme Programı</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/three.module.js",
+      "three/addons/": "./vendor/three/addons/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🦷</span>
+      <div>
+        <h1>DentaLab <span>3D</span></h1>
+        <p id="tagline">Diş Hekimliği 4–5. Sınıf · İnteraktif Öğrenme</p>
+      </div>
+    </div>
+    <nav class="modes" id="modes"><!-- JS ile üretilir --></nav>
+    <button id="lang-toggle" class="lang-toggle" title="Dil / Language">TR</button>
+  </header>
+
+  <main>
+    <!-- 3D SAHNE -->
+    <section class="viewport">
+      <div id="canvas-wrap"></div>
+
+      <div class="viewport-overlay top-left">
+        <div id="tooth-title" class="tooth-title">Alt 1. Büyük Azı Dişi</div>
+        <div id="tooth-fdi" class="tooth-fdi">FDI: 36</div>
+      </div>
+
+      <div class="viewport-overlay bottom-center" id="scene-hint"></div>
+
+      <div class="viewport-overlay top-right controls-3d">
+        <button id="btn-rotate" class="chip">⟳</button>
+        <button id="btn-reset" class="chip">⌂</button>
+        <button id="btn-section" class="chip">◑</button>
+      </div>
+
+      <div id="hotspot-label" class="hotspot-label hidden"></div>
+
+      <!-- Galeri tam-ekran katmanı -->
+      <div id="gallery-view" class="gallery-view hidden"></div>
+    </section>
+
+    <!-- YAN PANEL -->
+    <aside class="sidepanel" id="sidepanel"><!-- JS ile doldurulur --></aside>
+  </main>
+
+  <!-- Lightbox -->
+  <div id="lightbox" class="lightbox hidden">
+    <button id="lightbox-close" class="lightbox-close">✕</button>
+    <div class="lightbox-inner">
+      <img id="lightbox-img" alt="" />
+      <div id="lightbox-cap" class="lightbox-cap"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

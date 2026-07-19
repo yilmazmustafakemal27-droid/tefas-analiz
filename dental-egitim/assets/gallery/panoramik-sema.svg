@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" role="img" aria-label="Panoramik radyografi semasi">
+  <title>Panoramik radyografi semasi</title>
+  <defs>
+    <linearGradient id="pbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#242a30"/>
+      <stop offset="100%" stop-color="#10141a"/>
+    </linearGradient>
+    <linearGradient id="ptooth" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f0f2ee"/>
+      <stop offset="100%" stop-color="#b9bdb6"/>
+    </linearGradient>
+    <style>
+      .lbl{font-family:Arial,Helvetica,sans-serif;font-size:13px;fill:#eef1ee;}
+      .fdi{font-family:Arial,Helvetica,sans-serif;font-size:11px;fill:#9fb3c9;}
+      .ln{stroke:#eef1ee;stroke-width:1;fill:none;opacity:.85;}
+      .arch{fill:none;stroke:#7f8a94;stroke-width:2;}
+      .dot{fill:#eef1ee;}
+    </style>
+  </defs>
+
+  <rect width="900" height="500" fill="url(#pbg)"/>
+
+  <!-- midline -->
+  <line x1="450" y1="40" x2="450" y2="470" stroke="#5a6672" stroke-width="1.5" stroke-dasharray="6 6"/>
+
+  <!-- maxilla arch (upper) -->
+  <path class="arch" d="M120 200 Q160 110 300 96 Q450 84 600 96 Q740 110 780 200"/>
+  <!-- mandible arch (lower) -->
+  <path class="arch" d="M140 270 Q170 380 300 404 Q450 420 600 404 Q730 380 760 270"/>
+
+  <!-- maxillary sinus (two, schematic) -->
+  <path d="M250 150 Q320 120 380 150 Q380 200 320 210 Q260 200 250 150 Z" fill="#3a444e" opacity="0.75"/>
+  <path d="M650 150 Q580 120 520 150 Q520 200 580 210 Q640 200 650 150 Z" fill="#3a444e" opacity="0.75"/>
+
+  <!-- mandibular canal (curved line inside lower arch) -->
+  <path d="M175 285 Q210 360 300 380 Q450 394 600 380 Q690 360 725 285" fill="none" stroke="#c8863f" stroke-width="3" opacity="0.85" stroke-dasharray="2 0"/>
+
+  <!-- teeth generator: upper -->
+  <g>
+    <!-- upper right quadrant (patient) teeth on left of screen going to midline -->
+    <g fill="url(#ptooth)" stroke="#6a726c" stroke-width="0.8">
+      <rect x="140" y="176" width="16" height="26" rx="4" transform="rotate(-52 148 189)"/>
+      <rect x="170" y="152" width="16" height="26" rx="4" transform="rotate(-42 178 165)"/>
+      <rect x="206" y="132" width="15" height="26" rx="4" transform="rotate(-32 214 145)"/>
+      <rect x="246" y="118" width="14" height="25" rx="4" transform="rotate(-22 253 130)"/>
+      <rect x="290" y="108" width="13" height="24" rx="4" transform="rotate(-14 296 120)"/>
+      <rect x="336" y="102" width="12" height="23" rx="4" transform="rotate(-7 342 113)"/>
+      <rect x="378" y="99" width="11" height="22" rx="4" transform="rotate(-3 383 110)"/>
+      <rect x="416" y="98" width="10" height="21" rx="4"/>
+    </g>
+    <!-- upper left mirror -->
+    <g fill="url(#ptooth)" stroke="#6a726c" stroke-width="0.8">
+      <rect x="744" y="176" width="16" height="26" rx="4" transform="rotate(52 752 189)"/>
+      <rect x="714" y="152" width="16" height="26" rx="4" transform="rotate(42 722 165)"/>
+      <rect x="679" y="132" width="15" height="26" rx="4" transform="rotate(32 686 145)"/>
+      <rect x="640" y="118" width="14" height="25" rx="4" transform="rotate(22 647 130)"/>
+      <rect x="597" y="108" width="13" height="24" rx="4" transform="rotate(14 604 120)"/>
+      <rect x="552" y="102" width="12" height="23" rx="4" transform="rotate(7 558 113)"/>
+      <rect x="511" y="99" width="11" height="22" rx="4" transform="rotate(3 517 110)"/>
+      <rect x="474" y="98" width="10" height="21" rx="4"/>
+    </g>
+    <!-- lower right -->
+    <g fill="url(#ptooth)" stroke="#6a726c" stroke-width="0.8">
+      <rect x="150" y="256" width="15" height="26" rx="4" transform="rotate(58 157 269)"/>
+      <rect x="182" y="300" width="14" height="25" rx="4" transform="rotate(46 189 312)"/>
+      <rect x="222" y="332" width="13" height="24" rx="4" transform="rotate(34 228 344)"/>
+      <rect x="266" y="356" width="12" height="23" rx="4" transform="rotate(22 272 367)"/>
+      <rect x="312" y="372" width="11" height="22" rx="4" transform="rotate(13 317 383)"/>
+      <rect x="356" y="381" width="10" height="21" rx="4" transform="rotate(6 361 391)"/>
+      <rect x="396" y="386" width="9" height="20" rx="4"/>
+      <rect x="424" y="388" width="9" height="20" rx="4"/>
+    </g>
+    <!-- lower left -->
+    <g fill="url(#ptooth)" stroke="#6a726c" stroke-width="0.8">
+      <rect x="735" y="256" width="15" height="26" rx="4" transform="rotate(-58 742 269)"/>
+      <rect x="704" y="300" width="14" height="25" rx="4" transform="rotate(-46 711 312)"/>
+      <rect x="665" y="332" width="13" height="24" rx="4" transform="rotate(-34 671 344)"/>
+      <rect x="622" y="356" width="12" height="23" rx="4" transform="rotate(-22 628 367)"/>
+      <rect x="577" y="372" width="11" height="22" rx="4" transform="rotate(-13 583 383)"/>
+      <rect x="534" y="381" width="10" height="21" rx="4" transform="rotate(-6 539 391)"/>
+      <rect x="495" y="386" width="9" height="20" rx="4"/>
+      <rect x="467" y="388" width="9" height="20" rx="4"/>
+    </g>
+  </g>
+
+  <!-- FDI quadrant markers -->
+  <text class="fdi" x="150" y="230">18-11</text>
+  <text class="fdi" x="700" y="230">21-28</text>
+  <text class="fdi" x="150" y="336">48-41</text>
+  <text class="fdi" x="700" y="336">31-38</text>
+
+  <!-- labels -->
+  <g>
+    <line class="ln" x1="450" y1="120" x2="450" y2="60"/><circle class="dot" cx="450" cy="120" r="2.5"/>
+    <text class="lbl" x="404" y="52">Orta hat</text>
+
+    <line class="ln" x1="330" y1="165" x2="250" y2="60"/><circle class="dot" cx="330" cy="165" r="2.5"/>
+    <text class="lbl" x="150" y="54">Sinus maksillaris</text>
+
+    <line class="ln" x1="220" y1="140" x2="60" y2="120"/><circle class="dot" cx="220" cy="140" r="2.5"/>
+    <text class="lbl" x="24" y="124">Maksilla</text>
+
+    <line class="ln" x1="230" y1="360" x2="60" y2="400"/><circle class="dot" cx="230" cy="360" r="2.5"/>
+    <text class="lbl" x="24" y="404">Mandibula</text>
+
+    <line class="ln" x1="450" y1="392" x2="450" y2="460"/><circle class="dot" cx="450" cy="392" r="2.5"/>
+    <text class="lbl" x="380" y="480">Mandibular kanal</text>
+  </g>
+</svg>

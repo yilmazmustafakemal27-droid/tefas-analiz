@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 400" role="img" aria-label="Curugun dort asamasi">
+  <title>Dis curugunun ilerleme asamalari</title>
+  <defs>
+    <linearGradient id="cEnamel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f6f8fc"/>
+      <stop offset="100%" stop-color="#dbe1ea"/>
+    </linearGradient>
+    <linearGradient id="cDentin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f2dcaa"/>
+      <stop offset="100%" stop-color="#e2c17f"/>
+    </linearGradient>
+    <radialGradient id="cPulp" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#ef7a89"/>
+      <stop offset="100%" stop-color="#d13a4f"/>
+    </radialGradient>
+    <radialGradient id="cPulpInf" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#ff5f5f"/>
+      <stop offset="100%" stop-color="#b21f2b"/>
+    </radialGradient>
+    <style>
+      .st{font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;fill:#e9edf3;}
+      .ds{font-family:Arial,Helvetica,sans-serif;font-size:11px;fill:#b9c2ce;}
+      .en{fill:url(#cEnamel);stroke:#c2c9d3;stroke-width:1;}
+      .dn{fill:url(#cDentin);}
+    </style>
+  </defs>
+  <rect width="900" height="400" fill="#171b21"/>
+
+  <!-- reusable tooth via 4 groups, x offsets 60,285,510,735 -->
+  <!-- Stage 1 healthy -->
+  <g transform="translate(60,40)">
+    <path class="en" d="M20 20 Q70 -6 120 20 L128 92 Q70 78 12 92 Z"/>
+    <path class="dn" d="M12 92 Q70 78 128 92 L118 180 Q100 210 70 210 Q40 210 22 180 Z"/>
+    <path class="dn" d="M118 180 L124 250 Q118 280 106 280 Q98 280 96 250 Z"/>
+    <path class="dn" d="M22 180 L16 250 Q22 280 34 280 Q42 280 44 250 Z"/>
+    <path d="M46 96 Q70 88 94 96 L88 170 Q70 200 70 200 Q70 200 52 170 Z" fill="url(#cPulp)"/>
+    <path d="M70 200 L70 262" stroke="#d13a4f" stroke-width="5" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- Stage 2 enamel caries (white spot) -->
+  <g transform="translate(285,40)">
+    <path class="en" d="M20 20 Q70 -6 120 20 L128 92 Q70 78 12 92 Z"/>
+    <path class="dn" d="M12 92 Q70 78 128 92 L118 180 Q100 210 70 210 Q40 210 22 180 Z"/>
+    <path class="dn" d="M118 180 L124 250 Q118 280 106 280 Q98 280 96 250 Z"/>
+    <path class="dn" d="M22 180 L16 250 Q22 280 34 280 Q42 280 44 250 Z"/>
+    <path d="M46 96 Q70 88 94 96 L88 170 Q70 200 70 200 Q70 200 52 170 Z" fill="url(#cPulp)"/>
+    <path d="M70 200 L70 262" stroke="#d13a4f" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <!-- white spot lesion confined to enamel -->
+    <ellipse cx="70" cy="30" rx="18" ry="12" fill="#ffffff" opacity="0.9"/>
+    <ellipse cx="70" cy="30" rx="10" ry="7" fill="#e7e2c8" opacity="0.85"/>
+  </g>
+
+  <!-- Stage 3 dentin caries (brown cavity into dentin) -->
+  <g transform="translate(510,40)">
+    <path class="en" d="M20 20 Q70 -6 120 20 L128 92 Q70 78 12 92 Z"/>
+    <path class="dn" d="M12 92 Q70 78 128 92 L118 180 Q100 210 70 210 Q40 210 22 180 Z"/>
+    <path class="dn" d="M118 180 L124 250 Q118 280 106 280 Q98 280 96 250 Z"/>
+    <path class="dn" d="M22 180 L16 250 Q22 280 34 280 Q42 280 44 250 Z"/>
+    <path d="M46 96 Q70 88 94 96 L88 170 Q70 200 70 200 Q70 200 52 170 Z" fill="url(#cPulp)"/>
+    <path d="M70 200 L70 262" stroke="#d13a4f" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <!-- cavity breaking through enamel into dentin -->
+    <path d="M52 12 Q70 6 88 14 Q84 60 78 96 Q70 130 62 96 Q56 60 52 12 Z" fill="#6b3d1c"/>
+    <path d="M60 30 Q70 26 80 32 Q76 70 70 100 Q64 70 60 30 Z" fill="#3f2410"/>
+  </g>
+
+  <!-- Stage 4 pulpitis -->
+  <g transform="translate(735,40)">
+    <path class="en" d="M20 20 Q70 -6 120 20 L128 92 Q70 78 12 92 Z"/>
+    <path class="dn" d="M12 92 Q70 78 128 92 L118 180 Q100 210 70 210 Q40 210 22 180 Z"/>
+    <path class="dn" d="M118 180 L124 250 Q118 280 106 280 Q98 280 96 250 Z"/>
+    <path class="dn" d="M22 180 L16 250 Q22 280 34 280 Q42 280 44 250 Z"/>
+    <path d="M46 96 Q70 88 94 96 L88 170 Q70 200 70 200 Q70 200 52 170 Z" fill="url(#cPulpInf)"/>
+    <path d="M70 200 L70 262" stroke="#b21f2b" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <!-- deep cavity reaching pulp -->
+    <path d="M50 10 Q70 2 90 12 Q86 70 80 120 Q70 165 60 120 Q54 70 50 10 Z" fill="#5c3416"/>
+    <path d="M58 28 Q70 22 82 30 Q78 90 70 140 Q62 90 58 28 Z" fill="#2e1a0b"/>
+    <!-- inflammation glow -->
+    <circle cx="70" cy="150" r="22" fill="#ff5f5f" opacity="0.35"/>
+  </g>
+
+  <!-- stage labels -->
+  <g text-anchor="middle">
+    <text class="st" x="130" y="350">1. Saglam mine</text>
+    <text class="ds" x="130" y="372">Bozulmamis dis yapisi</text>
+
+    <text class="st" x="355" y="350">2. Mine curugu</text>
+    <text class="ds" x="355" y="372">Beyaz nokta lezyon</text>
+
+    <text class="st" x="580" y="350">3. Dentin curugu</text>
+    <text class="ds" x="580" y="372">Kaviteye ilerleme</text>
+
+    <text class="st" x="805" y="350">4. Pulpitis</text>
+    <text class="ds" x="805" y="372">Pulpaya ulasti</text>
+  </g>
+</svg>
