@@ -6,15 +6,20 @@ gerektirmeyen, **Three.js tabanlı 3D interaktif** öğrenme aracı.
 > ⚠️ **Eğitim amaçlıdır.** İçerik temel ders müfredatına dayanan öğrenme
 > materyalidir; klinik karar veya tanı aracı değildir.
 
+> 🌐 **İki dilli:** Sağ üstteki **TR/EN** düğmesiyle tüm arayüz ve içerik Türkçe ↔ İngilizce arasında değişir (tercih tarayıcıda saklanır).
+
 ## Modüller
 
 | Modül | Ne yapar |
 |-------|----------|
-| **Anatomi** | Diş tipi seç (molar / premolar / kanin / kesici), mine–dentin–pulpa–sement–kanal katmanlarını aç/kapat, modeli döndür, doku bilgilerini oku |
+| **Anatomi** | Diş tipi seç (molar / premolar / kanin / kesici), mine–dentin–pulpa–sement–kanal–diş eti katmanlarını aç/kapat, modeli döndür, doku bilgilerini oku |
 | **Diş Haritası (FDI)** | Tıklanabilir iki-çene şeması; her diş numarasının çeyreği, konumu ve türü açıklanır ve 3D modelde canlanır |
 | **Çürük / Kavite** | G.V. Black kavite sınıflaması (Sınıf I–VI); kart seçince 3D'de mine+dentin kesiti açılır |
 | **Endodonti** | Kanal tedavisi adımları; kök kanal anatomisini izole ederek gösterir |
-| **Quiz** | 10 soruluk, karışık sıralı, açıklamalı bilgi testi + skor |
+| **Periodontoloji** | Periodonsiyum yapıları, hastalık evreleri (sağlıklı/gingivitis/periodontitis) ve klinik ölçümler |
+| **Protez** | Sabit/hareketli protez, implant ve laminate veneer; genel iş akışı |
+| **Görseller** | Orijinal şematik radyografi ve anatomi çizimleri (galeri + lightbox); kendi gerçek fotoğraf/röntgenlerini ekleme sistemi |
+| **Quiz** | Konu (5 alan) ve zorluk (kolay/orta/zor) seçmeli, açıklamalı test; **ilerleme kaydı** (localStorage) |
 
 ## 3D özellikleri
 
@@ -38,6 +43,24 @@ python3 -m http.server 8000
 
 Alternatif: `npx http-server` veya herhangi bir statik sunucu.
 
+## Kendi gerçek görsellerini ekleme
+
+Galeri, telifsiz **orijinal şematik çizimlerle** gelir. Kendi gerçek diş
+fotoğraflarını/röntgenlerini eklemek için:
+
+1. Görselini `assets/gallery/` klasörüne kopyala.
+2. `js/content.js` içindeki `GALLERY` listesine bir kayıt ekle:
+   ```js
+   { src: "assets/gallery/dosyam.jpg",
+     category: { tr: "Radyografi", en: "Radiography" },
+     title: { tr: "...", en: "..." },
+     caption: { tr: "...", en: "..." },
+     license: { tr: "CC BY 4.0", en: "CC BY 4.0" },
+     source: { tr: "Kaynak/isim", en: "Source/name" } },
+   ```
+3. Yalnızca **kullanım hakkına sahip olduğun** (kendi arşivin veya açık lisanslı)
+   görselleri ekle ve kaynağını belirt.
+
 ## Dosya yapısı
 
 ```
@@ -45,9 +68,11 @@ dental-egitim/
 ├── index.html            # Uygulama kabuğu + importmap
 ├── css/style.css         # Arayüz teması
 ├── js/
-│   ├── main.js           # Orkestrasyon: navigasyon, paneller, quiz
+│   ├── main.js           # Orkestrasyon: navigasyon, i18n, paneller, quiz
 │   ├── tooth3d.js        # Three.js sahnesi ve parametrik diş modeli
-│   └── content.js        # Eğitim içeriği (anatomi, kariyoloji, endodonti, quiz)
+│   └── content.js        # Çift dilli içerik (anatomi, kariyoloji, endodonti,
+│                         #   perio, protez, galeri manifesti, quiz)
+├── assets/gallery/       # Orijinal SVG çizimler (+ kendi görsellerin)
 └── vendor/three/         # three.js r160 (yerel, çevrimdışı çalışsın diye)
 ```
 

@@ -5,24 +5,27 @@
 // ============================================================
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
 // Tüberkül (cusp) yükseklik haritaları — normalize koordinat:
 //  x = meziyodistal (-1..1), z = bukkolingual (+z = bukkal)
 //  sx/sz = gaussian yayılımı, h = bağıl yükseklik
 const CUSPS = {
-  // Alt 1. büyük azı: 5 tüberkül (MB, DB, D + ML, DL)
+  // Alt 1. büyük azı: 5 tüberkül (MB, DB, D + ML, DL) + meziyal/distal marjinal sırtlar
   molar: [
     { x: -0.5, z: 0.55, h: 1.0, sx: 0.42, sz: 0.42 }, // meziyobukkal
     { x: 0.18, z: 0.6, h: 0.95, sx: 0.42, sz: 0.42 }, // distobukkal
     { x: 0.72, z: 0.12, h: 0.8, sx: 0.38, sz: 0.42 }, // distal
     { x: -0.5, z: -0.58, h: 0.95, sx: 0.42, sz: 0.42 }, // meziyolingual
     { x: 0.28, z: -0.58, h: 0.88, sx: 0.42, sz: 0.42 }, // distolingual
+    { x: -0.92, z: 0.0, h: 0.5, sx: 0.16, sz: 0.95 }, // meziyal marjinal sırt
+    { x: 0.96, z: 0.0, h: 0.45, sx: 0.16, sz: 0.9 }, // distal marjinal sırt
   ],
-  // Üst 1. küçük azı: 2 tüberkül (bukkal büyük, palatinal)
+  // Üst 1. küçük azı: 2 tüberkül (bukkal büyük, palatinal) + marjinal sırtlar
   premolar: [
     { x: 0.0, z: 0.5, h: 1.0, sx: 0.55, sz: 0.4 }, // bukkal
     { x: 0.0, z: -0.48, h: 0.82, sx: 0.55, sz: 0.4 }, // palatinal
+    { x: -0.78, z: 0.0, h: 0.52, sx: 0.16, sz: 0.85 }, // meziyal marjinal sırt
+    { x: 0.78, z: 0.0, h: 0.52, sx: 0.16, sz: 0.85 }, // distal marjinal sırt
   ],
   // Kanin: tek sivri tüberkül
   canine: [{ x: 0.0, z: 0.08, h: 1.0, sx: 0.5, sz: 0.5 }],
@@ -33,6 +36,9 @@ const CUSPS = {
     { x: 0.42, z: 0.0, h: 0.55, sx: 0.28, sz: 0.7 },
   ],
 };
+
+// Ön dişlerde palatinal singulum (servikal-orta bölgede yumru)
+const HAS_CINGULUM = { canine: true, incisor: true };
 
 const smoothstep = (a, b, x) => {
   const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1);
@@ -92,11 +98,32 @@ export class ToothScene {
     this.scene.add(disc);
   }
 
-  // Gerçekçi yansımalar için PMREM ortam haritası
+  // Gerçekçi yansımalar için hafif stüdyo ortam haritası (kanvas gradyan → PMREM)
   _initEnvironment() {
+    const c = document.createElement("canvas");
+    c.width = 512; c.height = 256;
+    const ctx = c.getContext("2d");
+    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0.0, "#ffffff");
+    g.addColorStop(0.35, "#cdd9ea");
+    g.addColorStop(0.55, "#93a6c2");
+    g.addColorStop(1.0, "#2a3446");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 512, 256);
+    // yumuşak ışık parıltısı (spekülar çizgi için)
+    const rg = ctx.createRadialGradient(150, 60, 8, 150, 60, 130);
+    rg.addColorStop(0, "rgba(255,255,255,0.95)");
+    rg.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, 512, 256);
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
     const pmrem = new THREE.PMREMGenerator(this.renderer);
-    const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environment = envTex;
+    this.scene.environment = pmrem.fromEquirectangular(tex).texture;
+    tex.dispose();
+    pmrem.dispose();
   }
 
   _initLights() {
@@ -221,6 +248,14 @@ export class ToothScene {
         y -= (1 - field) * h * 0.06 * topW;
       }
 
+      // Ön dişlerde palatinal (lingual, -z) singulum yumrusu — servikal-orta bölge
+      if (HAS_CINGULUM[type] && v.z < 0 && v.y > -0.55 && v.y < 0.25) {
+        const yb = 1 - Math.min(1, Math.abs(v.y + 0.15) / 0.4); // -0.15 çevresinde tepe
+        const zb = Math.max(0, -v.z); // lingual yüzeyde
+        const bulge = yb * zb * d * 0.28;
+        z -= bulge;
+      }
+
       pos.setXYZ(i, x, y, z);
     }
     geo.computeVertexNormals();
@@ -283,6 +318,17 @@ export class ToothScene {
     // ---- SEMENT + kök dış yüzey ----
     const cementumGroup = new THREE.Group();
     cementumGroup.name = "cementum";
+    // Çok köklü dişte ortak kök gövdesi (furkasyon üstü)
+    if (P.roots.length > 1) {
+      const spanX = Math.max(...P.roots.map((r) => Math.abs(r[0]))) + P.rootR;
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(spanX * 0.95, spanX * 1.05, P.rootLen * 0.42, 32, 1),
+        this._matCementum()
+      );
+      trunk.scale.z = P.ovality;
+      trunk.position.y = 1.0 - P.rootLen * 0.19;
+      cementumGroup.add(trunk);
+    }
     P.roots.forEach(([ox, curve]) => {
       const root = new THREE.Mesh(this._rootGeom(P.rootLen, P.rootR, ox, curve, P.ovality), this._matCementum());
       root.position.y = 1.0;
@@ -297,6 +343,16 @@ export class ToothScene {
     const dCrown = new THREE.Mesh(this._crownGeom(type, P.crown, 0.8), this._matDentin());
     dCrown.position.y = crownY - 0.02;
     dentinGroup.add(dCrown);
+    if (P.roots.length > 1) {
+      const spanX = Math.max(...P.roots.map((r) => Math.abs(r[0]))) + P.rootR;
+      const dTrunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(spanX * 0.72, spanX * 0.8, P.rootLen * 0.4, 28, 1),
+        this._matDentin()
+      );
+      dTrunk.scale.z = P.ovality;
+      dTrunk.position.y = 1.0 - P.rootLen * 0.19;
+      dentinGroup.add(dTrunk);
+    }
     P.roots.forEach(([ox, curve]) => {
       const dRoot = new THREE.Mesh(this._rootGeom(P.rootLen * 0.98, P.rootR * 0.74, ox, curve, P.ovality), this._matDentin());
       dRoot.position.y = 1.0;

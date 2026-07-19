@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="Alt molar periapikal radyografi">
+  <title>Alt buyuk azi disi periapikal radyografi</title>
+  <defs>
+    <radialGradient id="rxbg" cx="50%" cy="42%" r="75%">
+      <stop offset="0%" stop-color="#2a2d31"/>
+      <stop offset="100%" stop-color="#0c0d0f"/>
+    </radialGradient>
+    <linearGradient id="enamel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f2f3f0"/>
+      <stop offset="100%" stop-color="#c9cbc4"/>
+    </linearGradient>
+    <linearGradient id="dentin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#b7b9b2"/>
+      <stop offset="100%" stop-color="#8f9189"/>
+    </linearGradient>
+    <radialGradient id="bone" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#6d6f68"/>
+      <stop offset="100%" stop-color="#3c3e3a"/>
+    </radialGradient>
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" result="n"/>
+      <feColorMatrix in="n" type="saturate" values="0"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.10"/></feComponentTransfer>
+      <feComposite operator="over" in2="SourceGraphic"/></filter>
+    <style>
+      .lbl{font-family:Arial,Helvetica,sans-serif;font-size:13px;fill:#f0f0ee;}
+      .ln{stroke:#f0f0ee;stroke-width:1;fill:none;opacity:.85;}
+      .dot{fill:#f0f0ee;}
+    </style>
+  </defs>
+
+  <rect width="800" height="600" fill="url(#rxbg)"/>
+
+  <!-- alveolar bone speckle region -->
+  <g filter="url(#grain)">
+    <rect x="230" y="250" width="340" height="320" fill="url(#bone)" opacity="0.95" rx="14"/>
+  </g>
+
+  <!-- tooth body -->
+  <g>
+    <!-- crown enamel cap -->
+    <path d="M320 150 Q400 108 480 150 L486 214 Q400 196 314 214 Z" fill="url(#enamel)"/>
+    <!-- dentin bulk crown+neck -->
+    <path d="M314 214 Q400 196 486 214 L470 300 Q400 288 330 300 Z" fill="url(#dentin)"/>
+    <!-- two roots -->
+    <path d="M330 300 Q345 300 366 300 L376 470 Q368 500 356 500 Q343 500 340 468 Z" fill="url(#dentin)"/>
+    <path d="M434 300 Q455 300 470 300 L460 468 Q456 500 444 500 Q432 500 424 470 Z" fill="url(#dentin)"/>
+    <!-- pulp chamber (radiolucent dark) -->
+    <path d="M356 218 Q400 210 444 218 L438 282 Q400 274 362 282 Z" fill="#1c1e20"/>
+    <!-- root canals dark thin -->
+    <path d="M356 282 L360 466" stroke="#17191b" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <path d="M444 282 L440 466" stroke="#17191b" stroke-width="6" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- periodontal space + lamina dura around roots -->
+  <path d="M338 300 L328 470 Q356 512 360 512" fill="none" stroke="#0c0d0f" stroke-width="3" opacity="0.7"/>
+  <path d="M368 302 L380 470 Q360 512 360 512" fill="none" stroke="#0c0d0f" stroke-width="3" opacity="0.7"/>
+  <path d="M424 302 L416 470 Q444 512 444 512" fill="none" stroke="#0c0d0f" stroke-width="3" opacity="0.7"/>
+  <path d="M470 300 L474 470 Q446 512 444 512" fill="none" stroke="#0c0d0f" stroke-width="3" opacity="0.7"/>
+  <!-- lamina dura bright line -->
+  <path d="M334 300 L324 474" stroke="#eceee8" stroke-width="2" fill="none" opacity="0.75"/>
+  <path d="M474 300 L478 474" stroke="#eceee8" stroke-width="2" fill="none" opacity="0.75"/>
+  <!-- periapical region -->
+  <ellipse cx="358" cy="512" rx="26" ry="20" fill="#232528" opacity="0.85"/>
+  <ellipse cx="442" cy="512" rx="26" ry="20" fill="#232528" opacity="0.85"/>
+
+  <!-- labels -->
+  <g>
+    <line class="ln" x1="400" y1="128" x2="560" y2="90"/><circle class="dot" cx="400" cy="128" r="2.5"/>
+    <text class="lbl" x="566" y="94">Mine</text>
+
+    <line class="ln" x1="470" y1="250" x2="600" y2="220"/><circle class="dot" cx="470" cy="250" r="2.5"/>
+    <text class="lbl" x="606" y="224">Dentin</text>
+
+    <line class="ln" x1="400" y1="248" x2="230" y2="150"/><circle class="dot" cx="400" cy="248" r="2.5"/>
+    <text class="lbl" x="96" y="146">Pulpa odasi</text>
+
+    <line class="ln" x1="440" y1="400" x2="600" y2="380"/><circle class="dot" cx="440" cy="400" r="2.5"/>
+    <text class="lbl" x="606" y="384">Kok kanali</text>
+
+    <line class="ln" x1="358" y1="512" x2="180" y2="540"/><circle class="dot" cx="358" cy="512" r="2.5"/>
+    <text class="lbl" x="60" y="544">Periapikal bolge</text>
+
+    <line class="ln" x1="540" y1="360" x2="640" y2="470"/><circle class="dot" cx="540" cy="360" r="2.5"/>
+    <text class="lbl" x="646" y="474">Alveol kemigi</text>
+
+    <line class="ln" x1="478" y1="380" x2="640" y2="540"/><circle class="dot" cx="478" cy="380" r="2.5"/>
+    <text class="lbl" x="646" y="544">Lamina dura</text>
+  </g>
+</svg>
