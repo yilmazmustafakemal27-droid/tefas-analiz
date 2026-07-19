@@ -53,8 +53,16 @@ $("#btn-section").addEventListener("click", (e) => {
   toast(on ? "Kesit görünümü açık — iç yapılar görünür" : "Kesit görünümü kapalı");
 });
 
-// ---------------- Hotspot tıklama ----------------
-canvasWrap.addEventListener("click", (ev) => {
+// ---------------- Hotspot tıklama (sürüklemeden ayır) ----------------
+let downPt = null;
+canvasWrap.addEventListener("pointerdown", (ev) => {
+  downPt = { x: ev.clientX, y: ev.clientY };
+});
+canvasWrap.addEventListener("pointerup", (ev) => {
+  if (!downPt) return;
+  const moved = Math.hypot(ev.clientX - downPt.x, ev.clientY - downPt.y);
+  downPt = null;
+  if (moved > 6) return; // sürükleme → etiket gösterme
   const hit = scene.pick(ev.clientX, ev.clientY);
   if (!hit) { hotspotLabel.classList.add("hidden"); return; }
   const layer = LAYERS.find((l) => l.id === hit.id);
@@ -77,7 +85,7 @@ function renderAnatomi() {
   // Diş tipi seçimi
   const pills = el("div", "pill-row");
   for (const key of Object.keys(TEETH)) {
-    const p = el("button", "pill" + (key === currentTooth ? " active" : ""), TEETH[key].name.split(" ").slice(-2).join(" "));
+    const p = el("button", "pill" + (key === currentTooth ? " active" : ""), TEETH[key].short || TEETH[key].name);
     p.addEventListener("click", () => {
       currentTooth = key;
       scene.buildTooth(key);
@@ -398,7 +406,8 @@ function switchMode(mode) {
   hotspotLabel.classList.add("hidden");
   sceneHint.textContent = HINTS[mode];
   // reset layers for a clean state (except quiz which ignores 3D)
-  if (mode !== "quiz") LAYERS.forEach((l) => scene.setLayer(l.id, true));
+  // diş eti (gingiva) varsayılan kapalı, diğerleri açık
+  if (mode !== "quiz") LAYERS.forEach((l) => scene.setLayer(l.id, l.id !== "gingiva"));
   RENDERERS[mode]();
 }
 

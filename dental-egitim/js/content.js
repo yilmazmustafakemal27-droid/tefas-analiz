@@ -46,6 +46,14 @@ export const LAYERS = [
     detail:
       "Kök kanalı, pulpanın apikal foramen'e uzanan kısmıdır. Kanal morfolojisi diş tipine göre değişir (örn. üst 1. büyük azıda sıklıkla 3–4 kanal, MB2 dahil). Endodontide kanalların tam olarak tespiti, şekillendirilmesi ve doldurulması başarının anahtarıdır.",
   },
+  {
+    id: "gingiva",
+    name: "Diş Eti (Gingiva)",
+    color: "#e08b93",
+    desc: "Bağlam için · varsayılan kapalı",
+    detail:
+      "Diş eti, dişi çevreleyen ve alveol kemiğini örten yumuşak dokudur. Serbest ve yapışık diş eti bölümleriyle birlikte, diş-eti oluğu (sulkus) ve birleşim epiteli periodontal sağlığın anahtarıdır. Model, servikal bölgedeki diş eti yakasını yaklaşık olarak temsil eder.",
+  },
 ];
 
 // Diş tipleri (parametrik 3D üretimi ve içerik için)
@@ -53,6 +61,7 @@ export const TEETH = {
   molar: {
     key: "molar",
     name: "Alt 1. Büyük Azı Dişi",
+    short: "Büyük Azı (Molar)",
     fdi: "36",
     roots: 2,
     canals: "3 kanal (MB, ML, D)",
@@ -66,6 +75,7 @@ export const TEETH = {
   premolar: {
     key: "premolar",
     name: "Üst 1. Küçük Azı Dişi",
+    short: "Küçük Azı (Premolar)",
     fdi: "14",
     roots: 2,
     canals: "2 kanal (B, P)",
@@ -78,6 +88,7 @@ export const TEETH = {
   canine: {
     key: "canine",
     name: "Üst Kanin (Köpek Dişi)",
+    short: "Kanin",
     fdi: "13",
     roots: 1,
     canals: "1 kanal",
@@ -90,6 +101,7 @@ export const TEETH = {
   incisor: {
     key: "incisor",
     name: "Üst Santral Kesici",
+    short: "Kesici",
     fdi: "11",
     roots: 1,
     canals: "1 kanal",
