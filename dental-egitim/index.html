@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DentaLab 3D — İnteraktif Diş Hekimliği Öğrenme Programı</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/three.module.js",
+      "three/addons/": "./vendor/three/addons/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🦷</span>
+      <div>
+        <h1>DentaLab <span>3D</span></h1>
+        <p>Diş Hekimliği 4–5. Sınıf · İnteraktif Öğrenme</p>
+      </div>
+    </div>
+    <nav class="modes">
+      <button class="mode-btn active" data-mode="anatomi">Anatomi</button>
+      <button class="mode-btn" data-mode="fdi">Diş Haritası (FDI)</button>
+      <button class="mode-btn" data-mode="caries">Çürük / Kavite</button>
+      <button class="mode-btn" data-mode="endo">Endodonti</button>
+      <button class="mode-btn" data-mode="quiz">Quiz</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- 3D SAHNE -->
+    <section class="viewport">
+      <div id="canvas-wrap"></div>
+
+      <div class="viewport-overlay top-left">
+        <div id="tooth-title" class="tooth-title">Alt 1. Büyük Azı Dişi</div>
+        <div id="tooth-fdi" class="tooth-fdi">FDI: 36</div>
+      </div>
+
+      <div class="viewport-overlay bottom-center" id="scene-hint">
+        Döndürmek için sürükle · Yakınlaştırmak için tekerlek · Katmanları sağ panelden aç/kapat
+      </div>
+
+      <div class="viewport-overlay top-right controls-3d">
+        <button id="btn-rotate" class="chip" title="Otomatik döndür">⟳ Döndür</button>
+        <button id="btn-reset" class="chip" title="Görünümü sıfırla">⌂ Sıfırla</button>
+        <button id="btn-section" class="chip" title="Kesit al">◑ Kesit</button>
+      </div>
+
+      <div id="hotspot-label" class="hotspot-label hidden"></div>
+    </section>
+
+    <!-- YAN PANEL -->
+    <aside class="sidepanel" id="sidepanel">
+      <!-- İçerik JS ile modüle göre doldurulur -->
+    </aside>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
